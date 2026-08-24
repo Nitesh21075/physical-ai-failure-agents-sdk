@@ -16,6 +16,7 @@ from harness.comparison.plan_c import (
     PlanCComparator,
 )
 from harness.media.isaac_export import export_isaac_replay
+from harness.mine_world import assess_visual_frame
 from harness.persistence.store import ExperimentStore
 from harness.research.world_prompt import (
     OpenAIResponsesWorldPromptModel,
@@ -51,9 +52,35 @@ class PairedCaptureService:
             raise PairingError("select an indexed Isaac Sim recording")
         run_directory = Path(record["run_directory"] or Path(record["trajectory_path"]).parent)
         try:
-            replay = export_isaac_replay(run_directory)
-            initial_frame = Path(replay["preview_frame_paths"][0])
-        except (FileNotFoundError, IndexError, OSError, ValueError) as error:
+            summary_path = run_directory / "summary.json"
+            summary = json.loads(summary_path.read_text(encoding="utf-8")) if summary_path.is_file() else {}
+            evidence_gate = summary.get("visual_evidence_gate")
+            if evidence_gate is not None and not evidence_gate.get("passed", False):
+                raise PairingError(
+                    "the Isaac tracking view failed content or semantic visibility checks"
+                )
+            seed_path = run_directory / "reactor_seed.json"
+            if seed_path.is_file():
+                seed_manifest = json.loads(seed_path.read_text(encoding="utf-8"))
+                initial_frame = Path(seed_manifest["seed_image_path"])
+                if not initial_frame.is_file() and str(initial_frame).startswith(
+                    "/workspace/project/"
+                ):
+                    initial_frame = self.runs_root.parent / str(initial_frame).removeprefix(
+                        "/workspace/project/"
+                    )
+                if not initial_frame.is_file():
+                    raise FileNotFoundError(initial_frame)
+                if seed_manifest.get("camera_role") not in {None, "tracking"}:
+                    raise PairingError("the Reactor seed is not from the tracking evidence camera")
+            else:
+                replay = export_isaac_replay(run_directory)
+                initial_frame = Path(replay["preview_frame_paths"][0])
+            if not assess_visual_frame(initial_frame)["passed"]:
+                raise PairingError("the Isaac seed frame is visually blank or under-informative")
+        except PairingError:
+            raise
+        except (FileNotFoundError, IndexError, OSError, ValueError, json.JSONDecodeError) as error:
             raise PairingError("the Isaac recording has no usable camera frame") from error
         scenario = record["scenario"]
         generated: WorldPromptResult = self.prompt_factory(model).create_prompt(

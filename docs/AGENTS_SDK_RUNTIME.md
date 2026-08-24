@@ -226,7 +226,7 @@ Post-cleanup evidence collected on 2026-08-24:
 | Real Isaac mine physics smoke test | PASS | Isaac Sim 6.0.1; chassis `[24.0,-1.35,0.35]` → `[24.00495,3.48000,0.30000]`; support ΔY `2.384 m`; beam Z `3.240` → `0.400 m` |
 | Agent-driven real Isaac experiment | PASS | Campaign `5f9198e2-9362-4ef1-869c-c38fb37305ba`; trace `trace_85ec803544bb4c0595ae4afeba8edd2e`; model selected 0.6 m/s, 300 steps; run `84f275f6-503c-4575-a88c-2d82844a41d7` |
 | Scientific indexing/API | PASS | Run indexed in `ExperimentStore`; `/api/experiments/84f275f6-503c-4575-a88c-2d82844a41d7` returned 200 |
-| Real Isaac recording | PASS | 21 real 320×180 PNG frames; first/last hashes differ; replay MP4 is 11,349 bytes and decodes successfully |
+| Historical Isaac recording transport | PASS, SEMANTIC QUALITY FAIL | 21 real 320×180 PNG frames decoded and differed, but the later visual audit found only a near-uniform brown field with no identifiable mine or rover. This evidence must not be reused as a Reactor seed. |
 | Dashboard process/routes | PASS | Real Uvicorn process; `/agent`, agent campaign API, and `/reactor?pair_id=…` returned 200 |
 | Ordinary process/session resume | PASS | A new CLI process reused campaign/session `8909f753-fcd5-49d8-a48c-335fa58516c8` and correctly recovered the earlier world conclusion and prior evidence |
 | Real Reactor pair | PASS | Campaign `26d90a6c-f2d3-41f6-9a45-73798fe38c4c`; pair `b67ac8dd-62b5-4ba5-a532-16c913bc0ca3`; real browser/WebRTC run `3066ccb8-7019-4b31-b505-c9dada522729`; 2,432,837-byte WebM decodes at 1664×960 |
@@ -242,10 +242,44 @@ executor backend (`isaac_sim`); those are now validated at their correct schema
 boundaries. The accepted run and encountered failures are recorded in
 [`runs/e2e-agents-sdk/20260824T090809Z/E2E_REPORT.md`](../runs/e2e-agents-sdk/20260824T090809Z/E2E_REPORT.md).
 
-The pipeline completed, but its scientific comparison remains inconclusive:
-the mine seed is extremely dark and the short Reactor future did not expose a
-confidently assessable structural event. That is an evidence-quality limitation,
-not a transport, persistence, session, or agent-loop failure.
+The historical pipeline completed, but its scientific comparison remains
+inconclusive. A later pixel and human visual audit established that the original
+single `/World/Robot/VLACamera` stream did not visibly contain the mine or rover;
+therefore the historical recording transport passed while its semantic visual
+acceptance failed. The current runner records synchronized ego, smoothed chase,
+and fixed witness streams. It records camera poses and measured image-quality /
+object-visibility gates, and `PairedCaptureService` refuses blank or rejected
+seeds. See `docs/MINE_ROVER_EXPERIMENT.md` for the current camera contract.
+
+Real camera diagnostics on 2026-08-24 established the cause and correction:
+the authored fixed camera and the first chase offset were outside the opaque
+mine wall, while the original ego camera was effectively against geometry. Run
+`camera-diagnostic-20260824T143533Z` visibly shows Nova Carter in the chase view,
+the support/beam bay in the witness view, and real mine lighting. Isaac 6.0.1
+emits support/beam semantic boxes but not the authored label on NVIDIA's
+instanced Nova visual; the runner records a bounded measured-articulation chase
+check for that one vendor asset instead of fabricating a semantic result.
+
+The post-fix real Agents SDK acceptance campaign is
+`268d9f9b-2227-4ccc-bc8c-028b4fb4cc07`. Trace
+`trace_c512d9901d1c40598143662277ad254a` shows the model selecting
+`inspect_mine_world`, `get_recent_experiments`, `get_campaign_state`, and then
+`run_mine_roof_support_experiment`; the host did not pre-call Isaac. The model
+selected 0.8 m/s, 900 control steps, and seed 42. Real run
+`47827760-a92b-4c7e-9689-82d4a0f6cafd` produced 61 frames per camera, three
+decodable nonzero MP4s, distinct first/middle/last tracking frames, and a passing
+visual evidence gate. The measured result was stable: rover translation about
+0.993 m, support displacement 0.1915 m, beam displacement 0.1915 m, and beam
+vertical drop 0.0000196 m (below the 0.8 m collapse criterion).
+
+The first pair-preparation attempt exposed a container-to-host seed-path mapping
+bug and was honestly returned as failed. After repairing that bounded path
+translation, a new process reused the same campaign and SQLite SDK session.
+Trace `trace_010c4014b76f4d5eb9eef8b71c53cbf2` shows the resumed model calling only
+`prepare_reactor_comparison`; it did not launch another simulation. Pending pair
+`ec4106a3-d5b9-4d64-937c-90a14d8439fc` now uses the real tracking PNG and is
+`WAITING_FOR_REACTOR_CAPTURE`. A new Reactor result has not yet been recorded,
+so no post-camera-fix Isaac/Reactor agreement claim exists yet.
 
 Repository provenance: the untouched fallback checkout remains at
 `/home/ubuntu/physical-ai-failure-project`, SHA

@@ -19,10 +19,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from harness.mine_world import (
+    EGO_CAMERA_PATH,
+    REACTOR_SEED_CAMERA_ROLE,
     ROVER_CAMERA_PATH,
     ROVER_PRIM_PATH,
+    TRACKING_CAMERA_PATH,
+    WITNESS_CAMERA_PATH,
     MineRoverExperiment,
     RoverDriveCommand,
+    assess_visual_frame,
     select_wheel_dofs,
     write_reactor_seed_manifest,
 )
@@ -119,6 +124,98 @@ def _as_pose(rover: object) -> list[float]:
     return [float(value) for value in positions.numpy()[0].tolist()]
 
 
+def _world_pose(prim: object) -> tuple[object, object]:
+    positions, orientations = prim.get_world_poses()
+    return positions.numpy()[0].copy(), orientations.numpy()[0].copy()
+
+
+def _rotate_vector(quaternion_wxyz: object, vector_xyz: object) -> object:
+    """Rotate one XYZ vector by a WXYZ quaternion without simulator helpers."""
+    import numpy as np
+
+    quaternion = np.asarray(quaternion_wxyz, dtype=np.float64)
+    vector = np.asarray(vector_xyz, dtype=np.float64)
+    quaternion /= np.linalg.norm(quaternion)
+    scalar, axis = quaternion[0], quaternion[1:]
+    return (
+        2.0 * np.dot(axis, vector) * axis
+        + (scalar * scalar - np.dot(axis, axis)) * vector
+        + 2.0 * scalar * np.cross(axis, vector)
+    )
+
+
+def _matrix_to_quaternion_wxyz(rotation: object) -> object:
+    import numpy as np
+
+    matrix = np.asarray(rotation, dtype=np.float64)
+    trace = float(np.trace(matrix))
+    if trace > 0:
+        scale = (trace + 1.0) ** 0.5 * 2.0
+        quaternion = np.array(
+            [0.25 * scale, (matrix[2, 1] - matrix[1, 2]) / scale,
+             (matrix[0, 2] - matrix[2, 0]) / scale, (matrix[1, 0] - matrix[0, 1]) / scale]
+        )
+    else:
+        index = int(np.argmax(np.diag(matrix)))
+        if index == 0:
+            scale = (1.0 + matrix[0, 0] - matrix[1, 1] - matrix[2, 2]) ** 0.5 * 2.0
+            quaternion = np.array(
+                [(matrix[2, 1] - matrix[1, 2]) / scale, 0.25 * scale,
+                 (matrix[0, 1] + matrix[1, 0]) / scale, (matrix[0, 2] + matrix[2, 0]) / scale]
+            )
+        elif index == 1:
+            scale = (1.0 + matrix[1, 1] - matrix[0, 0] - matrix[2, 2]) ** 0.5 * 2.0
+            quaternion = np.array(
+                [(matrix[0, 2] - matrix[2, 0]) / scale,
+                 (matrix[0, 1] + matrix[1, 0]) / scale, 0.25 * scale,
+                 (matrix[1, 2] + matrix[2, 1]) / scale]
+            )
+        else:
+            scale = (1.0 + matrix[2, 2] - matrix[0, 0] - matrix[1, 1]) ** 0.5 * 2.0
+            quaternion = np.array(
+                [(matrix[1, 0] - matrix[0, 1]) / scale,
+                 (matrix[0, 2] + matrix[2, 0]) / scale,
+                 (matrix[1, 2] + matrix[2, 1]) / scale, 0.25 * scale]
+            )
+    return quaternion / np.linalg.norm(quaternion)
+
+
+def _look_at_pose(eye: object, target: object, up_hint: object = (0.0, 0.0, 1.0)) -> tuple[object, object]:
+    """Return a camera pose using Isaac's +X right, +Y up, -Z forward convention."""
+    import numpy as np
+
+    eye = np.asarray(eye, dtype=np.float64)
+    forward = np.asarray(target, dtype=np.float64) - eye
+    forward /= np.linalg.norm(forward)
+    right = np.cross(forward, np.asarray(up_hint, dtype=np.float64))
+    if np.linalg.norm(right) < 1e-6:
+        right = np.array([1.0, 0.0, 0.0])
+    right /= np.linalg.norm(right)
+    up = np.cross(right, forward)
+    up /= np.linalg.norm(up)
+    orientation = _matrix_to_quaternion_wxyz(np.column_stack((right, up, -forward)))
+    return eye.astype(np.float32), orientation.astype(np.float32)
+
+
+def _semantic_box_summary(data: object, info: dict[str, object]) -> list[dict[str, object]]:
+    """Convert an RTX bounding-box result into compact JSON-safe evidence."""
+    if data is None:
+        return []
+    labels = info.get("idToLabels", {}) if isinstance(info, dict) else {}
+    boxes: list[dict[str, object]] = []
+    for box in data:
+        semantic_id = int(box["semanticId"])
+        label = labels.get(str(semantic_id), labels.get(semantic_id, "unknown"))
+        boxes.append(
+            {
+                "semantic_id": semantic_id,
+                "label": label,
+                "xyxy": [int(box[name]) for name in ("x_min", "y_min", "x_max", "y_max")],
+            }
+        )
+    return boxes
+
+
 def _body_state(body: object) -> dict[str, list[float]]:
     positions, orientations = body.get_world_poses()
     linear, angular = body.get_velocities()
@@ -149,7 +246,7 @@ def _write_standard_artifacts(
     support_displacement_m: float,
     beam_displacement_m: float,
     structural_collapse: bool,
-    frame_paths: list[Path],
+    camera_frames: dict[str, list[Path]],
 ) -> None:
     scenario = {
         "environment": "mine_v1",
@@ -163,7 +260,11 @@ def _write_standard_artifacts(
         },
         "hazards": {"structural_collapse": True},
     }
-    evidence_refs = [str(path) for path in frame_paths]
+    preferred_frames = camera_frames.get(REACTOR_SEED_CAMERA_ROLE, [])
+    evidence_refs = [str(path) for path in preferred_frames]
+    sensor_streams = {
+        role: [str(path) for path in paths] for role, paths in camera_frames.items()
+    }
     result = {
         "task_success": True,
         "environmental_failure": structural_collapse,
@@ -194,6 +295,7 @@ def _write_standard_artifacts(
                 "simulation_time": 0.0,
                 "state": before,
                 "sensor_refs": evidence_refs[:1],
+                "sensor_streams": {role: refs[:1] for role, refs in sensor_streams.items()},
             },
         },
         {
@@ -208,6 +310,7 @@ def _write_standard_artifacts(
                     "simulation_time": experiment.drive.control_steps / 60.0,
                     "state": after,
                     "sensor_refs": evidence_refs[-1:],
+                    "sensor_streams": {role: refs[-1:] for role, refs in sensor_streams.items()},
                 },
                 "events": (
                     [{"event_type": "structural_collapse", "severity": "high"}]
@@ -356,11 +459,7 @@ def main() -> int:
         print("mine rover: stage loaded", flush=True)
         robot_prim = stage.GetPrimAtPath(ROVER_PRIM_PATH)
         _require(robot_prim.IsValid(), f"missing rover prim: {ROVER_PRIM_PATH}")
-        camera_prim = stage.GetPrimAtPath(ROVER_CAMERA_PATH)
-        _require(
-            camera_prim.IsValid() and camera_prim.GetTypeName() == "Camera",
-            f"missing rover camera: {ROVER_CAMERA_PATH}",
-        )
+        authored_rover_camera = stage.GetPrimAtPath(ROVER_CAMERA_PATH)
 
         # The original stage is input-only. The RTX sensor schema is authored
         # into the anonymous session layer and exported separately per run.
@@ -377,10 +476,26 @@ def main() -> int:
             + f"; resolved selections={resolved_variants}",
             flush=True,
         )
-        if "OmniSensorAPI" not in camera_prim.GetAppliedSchemas():
-            camera_prim.ApplyAPI("OmniSensorAPI")
         articulation_root = _ensure_articulation_root(robot_prim)
         print(f"mine rover: session-only articulation root={articulation_root}", flush=True)
+        if not args.disable_camera:
+            import isaacsim.core.experimental.utils.semantics as semantics_utils
+            from pxr import Gf, Usd, UsdGeom, UsdLux
+
+            for prim in Usd.PrimRange(robot_prim):
+                if prim.IsA(UsdGeom.Gprim):
+                    semantics_utils.add_labels(prim, labels="nova_carter")
+            semantics_utils.add_labels(articulation_root, labels="nova_carter")
+            for prim_path, label in (
+                ("/World/FailureZones/RoofSupportZone/SupportPrimary/CollisionAndVisual", "roof_support"),
+                ("/World/FailureZones/RoofSupportZone/BeamPrimary/CollisionAndVisual", "roof_beam"),
+            ):
+                semantics_utils.add_labels(prim_path, labels=label)
+            fill_light = UsdLux.SphereLight.Define(stage, "/World/Sensors/RoverEvidenceFill")
+            fill_light.CreateIntensityAttr(4500.0)
+            fill_light.CreateRadiusAttr(0.18)
+            fill_light.CreateColorAttr(Gf.Vec3f(0.62, 0.72, 1.0))
+            UsdGeom.Xformable(fill_light).AddTranslateOp().Set(Gf.Vec3d(24.0, -2.5, 2.5))
         import omni.timeline
 
         timeline = omni.timeline.get_timeline_interface()
@@ -395,21 +510,6 @@ def main() -> int:
             f"left={left_dofs} right={right_dofs}",
             flush=True,
         )
-        camera = None
-        if not args.disable_camera:
-            # Creating the render product after the initial physics reset avoids
-            # making PhysX initialization wait on RTX pipeline work.
-            rtx_camera = RtxCamera(
-                ROVER_CAMERA_PATH,
-                tick_rate=experiment.camera_tick_rate_hz,
-                reset_xform_op_properties=False,
-            )
-            camera = CameraSensor(
-                rtx_camera, resolution=experiment.camera_resolution, annotators=["rgb"]
-            )
-            print("mine rover: RTX rover camera configured in session layer", flush=True)
-            for _ in range(3):
-                app.update()
         wheel_indices = rover.get_dof_indices(left_dofs + right_dofs)
         left_velocity = (
             experiment.drive.linear_velocity_mps
@@ -435,24 +535,130 @@ def main() -> int:
             app.update()
         beam = RigidPrim("/World/FailureZones/RoofSupportZone/BeamPrimary")
         support = RigidPrim("/World/FailureZones/RoofSupportZone/SupportPrimary")
+        camera_sensors: dict[str, object] = {}
+        camera_prims: dict[str, object] = {}
+        camera_pose_timeline: list[dict[str, object]] = []
+        semantic_visibility: dict[str, list[dict[str, object]]] = {
+            role: [] for role in ("ego", "tracking", "witness")
+        }
+        tracking_eye = None
+        tracking_target = None
+        if not args.disable_camera:
+            rover_position, rover_orientation = _world_pose(rover)
+            ego_eye = rover_position + _rotate_vector(rover_orientation, (0.0, 0.0, 1.65))
+            ego_target = ego_eye + _rotate_vector(rover_orientation, (5.0, 0.0, -0.25))
+            tracking_eye = rover_position + _rotate_vector(rover_orientation, (-2.1, 0.0, 3.5))
+            tracking_target = rover_position.copy()
+            tracking_target[2] = 1.15
+            initial_poses = {
+                "ego": (EGO_CAMERA_PATH, *_look_at_pose(ego_eye, ego_target)),
+                "tracking": (
+                    TRACKING_CAMERA_PATH,
+                    *_look_at_pose(tracking_eye, tracking_target),
+                ),
+                "witness": (
+                    WITNESS_CAMERA_PATH,
+                    *_look_at_pose((27.0, -3.3, 3.0), (24.0, -0.3, 1.4)),
+                ),
+            }
+            for role, (path, position, orientation) in initial_poses.items():
+                existing_camera = stage.GetPrimAtPath(path)
+                if existing_camera.IsValid() and "OmniSensorAPI" not in existing_camera.GetAppliedSchemas():
+                    existing_camera.ApplyAPI("OmniSensorAPI")
+                camera_prim = RtxCamera(
+                    path,
+                    tick_rate=experiment.camera_tick_rate_hz,
+                    positions=np.array([position], dtype=np.float32),
+                    orientations=np.array([orientation], dtype=np.float32),
+                    reset_xform_op_properties=True,
+                )
+                focal_length = {"ego": 18.0, "tracking": 12.0, "witness": 24.0}[role]
+                UsdGeom.Camera(stage.GetPrimAtPath(path)).GetFocalLengthAttr().Set(focal_length)
+                camera_prims[role] = camera_prim
+                camera_sensors[role] = CameraSensor(
+                    camera_prim,
+                    resolution=experiment.camera_resolution,
+                    annotators=["rgb", "bounding_box_2d_tight"],
+                )
+            print(
+                "mine rover: configured ego, smoothed tracking, and fixed witness RTX cameras; "
+                f"authored rover camera valid={authored_rover_camera.IsValid()}",
+                flush=True,
+            )
+            for _ in range(10):
+                app.update()
         rover_pose_before = _as_pose(rover)
         before = {
             "rover": {"position_xyz_m": rover_pose_before},
             "support": _body_state(support),
             "beam": _body_state(beam),
         }
-        frame_paths: list[Path] = []
+        camera_frames: dict[str, list[Path]] = {
+            role: [] for role in ("ego", "tracking", "witness")
+        }
         for step in range(experiment.drive.control_steps):
             rover.set_dof_velocity_targets(wheel_targets, dof_indices=wheel_indices)
             app.update()
-            if camera is not None and (
+            if camera_sensors:
+                rover_position, rover_orientation = _world_pose(rover)
+                ego_eye = rover_position + _rotate_vector(
+                    rover_orientation, (0.0, 0.0, 1.65)
+                )
+                ego_target = ego_eye + _rotate_vector(
+                    rover_orientation, (5.0, 0.0, -0.25)
+                )
+                desired_eye = rover_position + _rotate_vector(
+                    rover_orientation, (-2.1, 0.0, 3.5)
+                )
+                desired_target = rover_position.copy()
+                desired_target[2] = 1.15
+                tracking_eye = 0.88 * tracking_eye + 0.12 * desired_eye
+                tracking_target = 0.88 * tracking_target + 0.12 * desired_target
+                moving_poses = {
+                    "ego": _look_at_pose(ego_eye, ego_target),
+                    "tracking": _look_at_pose(tracking_eye, tracking_target),
+                }
+                for role, (position, orientation) in moving_poses.items():
+                    camera_prims[role].set_world_poses(
+                        positions=np.array([position], dtype=np.float32),
+                        orientations=np.array([orientation], dtype=np.float32),
+                    )
+            if camera_sensors and (
                 step % args.capture_every == 0 or step == experiment.drive.control_steps - 1
             ):
-                frame, _ = camera.get_data("rgb")
-                if frame is not None:
-                    frame_path = run_directory / "camera" / f"rgb_{len(frame_paths):06d}.png"
+                pose_record: dict[str, object] = {
+                    "control_step": step,
+                    "rover_position_xyz_m": [
+                        float(value) for value in rover_position.tolist()
+                    ],
+                    "cameras": {},
+                }
+                for role, sensor in camera_sensors.items():
+                    frame, _ = sensor.get_data("rgb")
+                    if frame is None:
+                        continue
+                    frame_path = (
+                        run_directory / "camera" / role /
+                        f"rgb_{len(camera_frames[role]):06d}.png"
+                    )
                     _save_rgb(frame, frame_path)
-                    frame_paths.append(frame_path)
+                    camera_frames[role].append(frame_path)
+                    boxes, box_info = sensor.get_data("bounding_box_2d_tight")
+                    semantic_visibility[role].append(
+                        {
+                            "control_step": step,
+                            "boxes": _semantic_box_summary(boxes, box_info),
+                        }
+                    )
+                    position, orientation = _world_pose(camera_prims[role])
+                    pose_record["cameras"][role] = {
+                        "prim": camera_prims[role].paths[0],
+                        "position_xyz_m": [float(value) for value in position.tolist()],
+                        "orientation_quaternion_wxyz": [
+                            float(value) for value in orientation.tolist()
+                        ],
+                    }
+                camera_pose_timeline.append(pose_record)
         rover_pose_after = _as_pose(rover)
         after = {
             "rover": {"position_xyz_m": rover_pose_after},
@@ -469,16 +675,82 @@ def main() -> int:
         session_path = run_directory / "mine_rover_session.usda"
         session_layer.Export(str(session_path))
         seed_manifest = None
-        if camera is not None:
-            _require(frame_paths, "RTX camera did not produce an RGB frame")
+        visual_quality: dict[str, list[dict[str, object]]] = {
+            role: [assess_visual_frame(path) for path in paths]
+            for role, paths in camera_frames.items()
+        }
+        semantic_labels_by_role = {
+            role: sorted(
+                {
+                    str(box["label"])
+                    for sample in samples
+                    for box in sample["boxes"]
+                }
+            )
+            for role, samples in semantic_visibility.items()
+        }
+        tracking_content_passed = bool(camera_frames["tracking"]) and all(
+            item["passed"] for item in visual_quality["tracking"]
+        )
+        tracking_label_text = " ".join(semantic_labels_by_role["tracking"]).casefold()
+        witness_label_text = " ".join(semantic_labels_by_role["witness"]).casefold()
+        tracking_pose_samples = [
+            sample["cameras"]["tracking"]
+            for sample in camera_pose_timeline
+            if "tracking" in sample["cameras"]
+        ]
+        rover_geometric_visibility = bool(tracking_pose_samples) and all(
+            1.0
+            <= sum(
+                (camera_position - rover_position) ** 2
+                for camera_position, rover_position in zip(
+                    sample["position_xyz_m"],
+                    camera_pose_timeline[index]["rover_position_xyz_m"],
+                    strict=True,
+                )
+            )
+            ** 0.5
+            <= 6.0
+            for index, sample in enumerate(tracking_pose_samples)
+        )
+        tracking_semantics_passed = (
+            "roof_support" in tracking_label_text and "roof_beam" in witness_label_text
+        )
+        visual_evidence_gate = {
+            "passed": (
+                tracking_content_passed
+                and tracking_semantics_passed
+                and rover_geometric_visibility
+            ),
+            "preferred_role": REACTOR_SEED_CAMERA_ROLE,
+            "content_passed": tracking_content_passed,
+            "semantic_visibility_passed": tracking_semantics_passed,
+            "required_semantic_labels": ["roof_support", "roof_beam"],
+            "observed_labels_by_role": semantic_labels_by_role,
+            "rover_geometric_visibility_passed": rover_geometric_visibility,
+            "rover_visibility_method": (
+                "tracking camera is deterministically aimed at the measured articulation root; "
+                "camera-to-rover distance must remain 1-6 m. NVIDIA's instanced Nova visuals do "
+                "not emit the authored semantic label in Isaac Sim 6.0.1 bounding-box output."
+            ),
+        }
+        if camera_sensors:
+            _require(camera_frames["tracking"], "tracking camera did not produce an RGB frame")
             seed_manifest = write_reactor_seed_manifest(
                 run_directory,
                 experiment,
-                seed_image=frame_paths[0],
+                seed_image=camera_frames["tracking"][0],
                 source_stage=args.stage.resolve(),
                 session_layer=session_path,
                 rover_pose_before=rover_pose_before,
                 rover_pose_after=rover_pose_after,
+                camera_prim=TRACKING_CAMERA_PATH,
+                camera_role=REACTOR_SEED_CAMERA_ROLE,
+                visual_quality={
+                    **visual_quality["tracking"][0],
+                    "semantic_visibility": semantic_visibility["tracking"][0],
+                    "run_visual_evidence_gate": visual_evidence_gate,
+                },
             )
         _write_standard_artifacts(
             run_directory,
@@ -488,7 +760,28 @@ def main() -> int:
             support_displacement_m=support_displacement_m,
             beam_displacement_m=beam_displacement_m,
             structural_collapse=structural_collapse,
-            frame_paths=frame_paths,
+            camera_frames=camera_frames,
+        )
+        camera_streams = {
+            role: {
+                "camera_prim": {
+                    "ego": EGO_CAMERA_PATH,
+                    "tracking": TRACKING_CAMERA_PATH,
+                    "witness": WITNESS_CAMERA_PATH,
+                }[role],
+                "camera_role": role,
+                "resolution_height_width": list(experiment.camera_resolution),
+                "frames": [str(path) for path in paths],
+                "visual_quality": visual_quality[role],
+                "semantic_visibility": semantic_visibility[role],
+            }
+            for role, paths in camera_frames.items()
+        }
+        camera_pose_path = run_directory / "camera" / "camera_poses.jsonl"
+        camera_pose_path.parent.mkdir(parents=True, exist_ok=True)
+        camera_pose_path.write_text(
+            "".join(json.dumps(item, sort_keys=True) + "\n" for item in camera_pose_timeline),
+            encoding="utf-8",
         )
         summary = {
             "run_id": run_id,
@@ -497,14 +790,21 @@ def main() -> int:
             "source_stage": str(args.stage.resolve()),
             "derived_entry_stage": str(derived_stage),
             "session_layer": str(session_path),
-            "camera_prim": ROVER_CAMERA_PATH,
+            "camera_prim": TRACKING_CAMERA_PATH,
             "camera_status": "disabled for physics diagnostic"
-            if camera is None
-            else "captured RTX RGB frames",
+            if not camera_sensors
+            else "captured synchronized ego, tracking, and witness RTX RGB streams",
+            "camera_streams": camera_streams,
+            "camera_pose_timeline": str(camera_pose_path),
+            "reactor_seed_camera_role": REACTOR_SEED_CAMERA_ROLE,
+            "visual_evidence_gate": visual_evidence_gate,
             "articulation_root": articulation_root,
             "session_only_robot_variants": selected_variants,
             "resolved_rover_variants": resolved_variants,
-            "camera_frames": [str(path) for path in frame_paths],
+            "camera_frames": [str(path) for path in camera_frames[REACTOR_SEED_CAMERA_ROLE]],
+            "camera_frame_count_by_role": {
+                role: len(paths) for role, paths in camera_frames.items()
+            },
             "left_wheel_dofs": left_dofs,
             "right_wheel_dofs": right_dofs,
             "wheel_velocity_targets_radps": {"left": left_velocity, "right": right_velocity},

@@ -81,9 +81,12 @@ def test_live_reactor_tab_and_token_guard(tmp_path: Path, monkeypatch):
 def test_paired_capture_persists_browser_video_as_a_plan_c_pair(tmp_path: Path):
     runs = tmp_path / "runs"
     run_dir = runs / "isaac" / "run-1"
-    camera = runs / "isaac" / "camera" / "capture" / "rgb_000000.npy"
+    camera = runs / "isaac" / "camera" / "capture" / "rgb_000000.png"
     camera.parent.mkdir(parents=True); run_dir.mkdir(parents=True)
-    np.save(camera, np.zeros((12, 16, 4), dtype=np.uint8))
+    varied = np.zeros((64, 64, 4), dtype=np.uint8)
+    varied[:, :, :3] = np.random.default_rng(7).integers(0, 256, (64, 64, 3), dtype=np.uint8)
+    varied[:, :, 3] = 255
+    Image.fromarray(varied[:, :, :3], "RGB").save(camera)
     scenario = Scenario(
         environment="mine_v1", task="mine_roof_support_interaction", seed=7,
         parameters={"rover_linear_velocity_mps": 0.25, "control_steps": 180},
@@ -91,6 +94,15 @@ def test_paired_capture_persists_browser_video_as_a_plan_c_pair(tmp_path: Path):
     )
     (run_dir / "trajectory.jsonl").write_text(
         json.dumps({"record_type": "initial_observation", "observation": {"sensor_refs": [str(camera)]}}) + "\n"
+    )
+    (run_dir / "reactor_seed.json").write_text(
+        json.dumps(
+            {
+                "seed_image_path": "/workspace/project/runs/isaac/camera/capture/rgb_000000.png",
+                "camera_role": "tracking",
+            }
+        ),
+        encoding="utf-8",
     )
     record = ExperimentRecord(
         "isaac-run", scenario, "isaac_sim", str(run_dir / "trajectory.jsonl"),

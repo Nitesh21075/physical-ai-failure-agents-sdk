@@ -12,7 +12,9 @@ import numpy as np
 from PIL import Image
 
 
-def _frame_paths(run_directory: Path, project_root: Path) -> list[Path]:
+def _frame_paths(
+    run_directory: Path, project_root: Path, camera_role: str | None = None
+) -> list[Path]:
     trajectory = run_directory / "trajectory.jsonl"
     refs: list[str] = []
     if trajectory.exists():
@@ -29,9 +31,15 @@ def _frame_paths(run_directory: Path, project_root: Path) -> list[Path]:
             path = project_root / ref.removeprefix("/workspace/project/")
         if path.suffix.lower() in {".npy", ".png", ".jpg", ".jpeg", ".webp"} and path.exists() and path not in frames:
             frames.append(path)
+    camera_root = run_directory / "camera"
+    if camera_role and (camera_root / camera_role).is_dir():
+        camera_root = camera_root / camera_role
+    elif (camera_root / "tracking").is_dir():
+        camera_root = camera_root / "tracking"
+        camera_role = "tracking"
     discovered = sorted(
         path
-        for path in (run_directory / "camera").glob("**/*")
+        for path in camera_root.glob("**/*")
         if path.suffix.lower() in {".npy", ".png", ".jpg", ".jpeg", ".webp"}
     )
     if discovered:
@@ -77,7 +85,9 @@ def _ffmpeg_executable() -> str:
         raise RuntimeError("MP4 export requires ffmpeg or imageio-ffmpeg") from exc
 
 
-def export_isaac_replay(run_directory: str | Path, fps: int = 5) -> dict[str, Any]:
+def export_isaac_replay(
+    run_directory: str | Path, fps: int = 5, *, camera_role: str | None = None
+) -> dict[str, Any]:
     """Create PNG previews, thumbnail, MP4, and a manifest under ``media/``.
 
     The source ``.npy`` arrays are only read.  The returned paths are suitable
@@ -88,10 +98,15 @@ def export_isaac_replay(run_directory: str | Path, fps: int = 5) -> dict[str, An
     run_directory = Path(run_directory).resolve()
     runs_root = next((parent for parent in run_directory.parents if parent.name == "runs"), None)
     project_root = runs_root.parent if runs_root is not None else run_directory.parent
-    source_frames = _frame_paths(run_directory, project_root)
+    source_frames = _frame_paths(run_directory, project_root, camera_role)
     if not source_frames:
         raise FileNotFoundError(f"no Isaac camera frames found for {run_directory}")
+    selected_role = camera_role
+    if selected_role is None and (run_directory / "camera" / "tracking").is_dir():
+        selected_role = "tracking"
     output = run_directory / "media" / "isaac_replay"
+    if selected_role and selected_role != "tracking":
+        output = output / selected_role
     frames_dir = output / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
     # These are derived files.  Remove only our own previous previews so a
@@ -118,7 +133,7 @@ def export_isaac_replay(run_directory: str | Path, fps: int = 5) -> dict[str, An
         check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
     )
     manifest = {
-        "kind": "isaac_camera_replay", "fps": fps,
+        "kind": "isaac_camera_replay", "fps": fps, "camera_role": selected_role,
         "raw_frame_paths": [str(path) for path in source_frames],
         "preview_frame_paths": [str(path) for path in png_frames],
         "thumbnail_path": str(thumbnail), "video_path": str(video),
@@ -127,3 +142,18 @@ def export_isaac_replay(run_directory: str | Path, fps: int = 5) -> dict[str, An
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     manifest["manifest_path"] = str(manifest_path)
     return manifest
+
+
+def export_isaac_camera_replays(run_directory: str | Path, fps: int = 5) -> dict[str, dict[str, Any]]:
+    """Export every named camera stream, retaining tracking as the default replay."""
+    run_directory = Path(run_directory)
+    roles = [
+        role for role in ("tracking", "ego", "witness")
+        if (run_directory / "camera" / role).is_dir()
+    ]
+    if not roles:
+        return {"default": export_isaac_replay(run_directory, fps=fps)}
+    return {
+        role: export_isaac_replay(run_directory, fps=fps, camera_role=role)
+        for role in roles
+    }

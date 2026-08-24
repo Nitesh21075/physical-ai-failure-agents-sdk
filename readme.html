@@ -39,6 +39,7 @@ REACTOR_API_KEY=&lt;your Reactor key&gt;</code></pre>
   'Investigate roof-support failure in the mine. Inspect the world and prior evidence, then use at most one new Isaac experiment.' \
   --experiment-budget 2</code></pre>
   <p>Save the printed <code>campaign_id</code>. The first step may run a real Isaac experiment and return <code>waiting_for_reactor</code> with a <code>pair_id</code>.</p>
+  <p>Each new mine run records three real RTX views: a rover-oriented ego view, a smoothed invisible chase camera, and a fixed roof-support witness camera. Reactor is seeded only from the chase view after the content and object-visibility gate passes.</p>
 
   <h2>4. Start the dashboard</h2>
   <pre><code>.venv/bin/python scripts/run_dashboard.py \
@@ -63,6 +64,7 @@ REACTOR_API_KEY=&lt;your Reactor key&gt;</code></pre>
   <pre><code>.venv/bin/ruff check src scripts tests
 .venv/bin/pytest -q</code></pre>
   <p>Real Isaac validation uses the pinned <code>nvcr.io/nvidia/isaac-sim:6.0.1</code> image and the repository's mine scripts. See <a href="docs/AGENTS_SDK_RUNTIME.md">the runtime guide</a> for the exact call graph, tool boundary, persistence model, and E2E status.</p>
+  <p>The tracking camera follows Nova Carter by updating a non-physical camera transform from the measured rover pose. It never teleports the rover or triggers a failure. Raw frames and camera-pose provenance are stored below each run's <code>camera/</code> directory.</p>
 
   <h2>Safety boundary</h2>
   <p>The model receives no shell, arbitrary Python, generic file-write, unrestricted Docker, or unrestricted Omniverse tool. Isaac runs are bounded and fixed to the mine experiment service; scientific evidence is stored under <code>runs/</code>.</p>

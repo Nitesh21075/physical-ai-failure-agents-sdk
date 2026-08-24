@@ -9,9 +9,16 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+from PIL import Image
+
 MINE_WORLD_ID = "mine_v1"
 ROVER_PRIM_PATH = "/World/Robot"
 ROVER_CAMERA_PATH = "/World/Robot/VLACamera"
+EGO_CAMERA_PATH = "/World/Sensors/RoverEgoCamera"
+TRACKING_CAMERA_PATH = "/World/Sensors/RoverTrackingCamera"
+WITNESS_CAMERA_PATH = "/World/Sensors/RoofSupportCamera"
+REACTOR_SEED_CAMERA_ROLE = "tracking"
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +78,9 @@ def write_reactor_seed_manifest(
     session_layer: str | Path,
     rover_pose_before: list[float],
     rover_pose_after: list[float],
+    camera_prim: str = TRACKING_CAMERA_PATH,
+    camera_role: str = REACTOR_SEED_CAMERA_ROLE,
+    visual_quality: dict[str, Any] | None = None,
 ) -> Path:
     """Record a real Isaac camera image as a bounded Reactor conditioning input.
 
@@ -88,17 +98,48 @@ def write_reactor_seed_manifest(
         "usage": "Seed one bounded Reactor visual-world episode; it is not physical ground truth.",
         "reactor_model": "reactor/lingbot-world-2",
         "experiment": experiment.to_dict(),
-        "camera_prim": ROVER_CAMERA_PATH,
+        "camera_prim": camera_prim,
+        "camera_role": camera_role,
+        "visual_quality": visual_quality or assess_visual_frame(seed_image),
         "seed_image_path": str(seed_image),
         "source_stage_path": str(source_stage),
         "derived_session_layer_path": str(session_layer),
         "rover_pose_before": rover_pose_before,
         "rover_pose_after": rover_pose_after,
-        "prompt": "First-person RGB view from an inspection rover navigating a dim underground mine drift with roof supports, loose rock, and debris. Continue the visual scene consistently from this image.",
+        "prompt": "Tracking-camera RGB view of a Nova Carter inspection rover approaching a roof support in a dim underground mine drift. Keep the rover, support, beam, loose rock, and debris spatially consistent while continuing the future scene.",
     }
     output = run_directory / "reactor_seed.json"
     output.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return output
+
+
+def assess_visual_frame(image_path: str | Path) -> dict[str, Any]:
+    """Measure whether a rendered frame has enough variation to be evidence.
+
+    This is deliberately a conservative image-content gate, not a claim that
+    the correct semantic objects are visible. Simulator-side semantic boxes
+    provide that separate check.
+    """
+    image_path = Path(image_path)
+    with Image.open(image_path) as image:
+        pixels = np.asarray(image.convert("RGB"), dtype=np.float32)
+    luminance = pixels.mean(axis=2)
+    horizontal = np.abs(np.diff(luminance, axis=1))
+    vertical = np.abs(np.diff(luminance, axis=0))
+    channel_std = [float(value) for value in pixels.std(axis=(0, 1)).tolist()]
+    dynamic_range = float(np.percentile(luminance, 99) - np.percentile(luminance, 1))
+    mean_gradient = float(
+        (horizontal.mean() if horizontal.size else 0.0)
+        + (vertical.mean() if vertical.size else 0.0)
+    )
+    passed = max(channel_std) >= 8.0 and dynamic_range >= 20.0 and mean_gradient >= 0.5
+    return {
+        "passed": passed,
+        "channel_std": channel_std,
+        "luminance_dynamic_range_p01_p99": dynamic_range,
+        "mean_gradient": mean_gradient,
+        "criterion": "max channel std >= 8, luminance p99-p01 >= 20, mean gradient >= 0.5",
+    }
 
 
 def _bounded_number(value: float, name: str, minimum: float, maximum: float) -> None:

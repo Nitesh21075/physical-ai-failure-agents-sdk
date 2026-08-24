@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from harness.media.isaac_export import export_isaac_replay
+from harness.media.isaac_export import export_isaac_camera_replays
 from harness.persistence.store import ExperimentStore
 
 
@@ -100,7 +100,7 @@ class MineIsaacToolService:
         }
         replay_available = False
         try:
-            export_isaac_replay(run_directory)
+            export_isaac_camera_replays(run_directory)
             replay_available = True
         except (FileNotFoundError, IndexError, OSError, ValueError):
             # Physics evidence remains valid if rendering/export is unavailable.
@@ -120,7 +120,19 @@ class MineIsaacToolService:
                 if suffix == ".jsonl"
                 else "metadata"
             )
-            self.store.register_artifact("experiment", run_id, kind, path)
+            relative_parts = path.relative_to(run_directory).parts
+            artifact_metadata: dict[str, str] = {}
+            if len(relative_parts) >= 3 and relative_parts[0] == "camera":
+                artifact_metadata["camera_role"] = relative_parts[1]
+            elif relative_parts[:2] == ("media", "isaac_replay"):
+                artifact_metadata["camera_role"] = (
+                    relative_parts[2]
+                    if len(relative_parts) >= 4 and relative_parts[2] in {"ego", "witness"}
+                    else "tracking"
+                )
+            self.store.register_artifact(
+                "experiment", run_id, kind, path, artifact_metadata or None
+            )
         return {
             "run_id": run_id,
             "parameters": scenario["parameters"],
@@ -137,6 +149,8 @@ class MineIsaacToolService:
             "rover_pose_after": summary["rover_pose_after"],
             "artifact_directory": str(run_directory),
             "camera_frame_count": len(summary["camera_frames"]),
+            "camera_frame_count_by_role": summary.get("camera_frame_count_by_role", {}),
+            "visual_evidence_gate": summary.get("visual_evidence_gate"),
             "replay_available": replay_available,
         }
 
