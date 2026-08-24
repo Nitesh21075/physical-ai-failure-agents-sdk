@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Physical AI Failure Agents SDK — Startup</title>
+  <style>
+    :root { color-scheme: light dark; --bg:#f7f8fa; --panel:#fff; --ink:#17202a; --muted:#53616f; --accent:#1769aa; --code:#eef2f5; }
+    @media (prefers-color-scheme: dark) { :root { --bg:#11161b; --panel:#1b2229; --ink:#edf2f7; --muted:#b4c0ca; --accent:#73b8f0; --code:#27313a; } }
+    body { max-width: 920px; margin: 0 auto; padding: 2rem 1.25rem 4rem; background:var(--bg); color:var(--ink); font:16px/1.55 system-ui,-apple-system,Segoe UI,sans-serif; }
+    h1,h2 { line-height:1.2; } h1 { margin-top:0; } h2 { margin-top:2rem; border-bottom:1px solid #8a99a8; padding-bottom:.3rem; }
+    p, li { max-width: 78ch; } code, pre { font-family: ui-monospace,SFMono-Regular,Menlo,monospace; }
+    code { background:var(--code); padding:.1rem .3rem; border-radius:4px; } pre { overflow:auto; padding:1rem; border-radius:8px; background:var(--code); }
+    .note { padding:.8rem 1rem; border-left:4px solid var(--accent); background:var(--panel); }
+    a { color:var(--accent); }
+  </style>
+</head>
+<body>
+  <h1>Physical AI Failure Agents SDK</h1>
+  <p>Startup and demo instructions for the persistent <strong>MineFailureResearcher</strong> agent.</p>
+
+  <div class="note"><strong>Prerequisites:</strong> Linux with Python 3.11+, Docker and NVIDIA Container Toolkit for Isaac Sim, an OpenAI API key, and (for the browser comparison step) a Reactor API key.</div>
+
+  <h2>1. Install</h2>
+  <pre><code>cd /home/ubuntu/physical-ai-failure-agents-sdk
+python3 -m venv .venv
+.venv/bin/pip install -e '.[dev]'</code></pre>
+
+  <h2>2. Configure the environment</h2>
+  <p>Create <code>.env</code> in the repository root. It is git-ignored and must never be committed.</p>
+  <pre><code>OPENAI_API_KEY=&lt;your OpenAI key&gt;
+AGENT_MODEL=gpt-5.6-luna
+REACTOR_API_KEY=&lt;your Reactor key&gt;</code></pre>
+  <p>The launcher loads this file automatically. You may export the variables in your shell instead.</p>
+
+  <h2>3. Start a research step</h2>
+  <p>This invokes the official OpenAI Agents SDK Runner. The model chooses which of the seven bounded tools to call; the host does not pre-script the sequence.</p>
+  <pre><code>.venv/bin/python scripts/run_agents_researcher.py \
+  'Investigate roof-support failure in the mine. Inspect the world and prior evidence, then use at most one new Isaac experiment.' \
+  --experiment-budget 2</code></pre>
+  <p>Save the printed <code>campaign_id</code>. The first step may run a real Isaac experiment and return <code>waiting_for_reactor</code> with a <code>pair_id</code>.</p>
+
+  <h2>4. Start the dashboard</h2>
+  <pre><code>.venv/bin/python scripts/run_dashboard.py \
+  --database runs/experiments.sqlite3 --port 8000</code></pre>
+  <p>Open:</p>
+  <ul>
+    <li><a href="http://127.0.0.1:8000/agent">Agent control</a></li>
+    <li><a href="http://127.0.0.1:8000/reactor">Reactor browser capture</a></li>
+    <li><a href="http://127.0.0.1:8000/">Evidence library</a></li>
+  </ul>
+
+  <h2>5. Complete the Reactor comparison</h2>
+  <p>Use the pending pair link returned by the agent (normally <code>/reactor?pair_id=&lt;pair_id&gt;</code>). Start the real LingBot World 2/WebRTC session, record the future, and finish/save the capture. Do not replace it with a mock image or video.</p>
+
+  <h2>6. Resume the same campaign</h2>
+  <p>After the Reactor recording is saved, continue with the same campaign ID. The SDK session is persisted in <code>runs/agent_sessions.sqlite3</code>, so the agent can recover its prior conversation and evidence context.</p>
+  <pre><code>.venv/bin/python scripts/run_agents_researcher.py \
+  'Continue the research campaign now that the Reactor recording is complete.' \
+  --campaign-id '&lt;campaign-id&gt;'</code></pre>
+
+  <h2>7. Verify locally</h2>
+  <pre><code>.venv/bin/ruff check src scripts tests
+.venv/bin/pytest -q</code></pre>
+  <p>Real Isaac validation uses the pinned <code>nvcr.io/nvidia/isaac-sim:6.0.1</code> image and the repository's mine scripts. See <a href="docs/AGENTS_SDK_RUNTIME.md">the runtime guide</a> for the exact call graph, tool boundary, persistence model, and E2E status.</p>
+
+  <h2>Safety boundary</h2>
+  <p>The model receives no shell, arbitrary Python, generic file-write, unrestricted Docker, or unrestricted Omniverse tool. Isaac runs are bounded and fixed to the mine experiment service; scientific evidence is stored under <code>runs/</code>.</p>
+</body>
+</html>
