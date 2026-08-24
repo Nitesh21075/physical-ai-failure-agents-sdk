@@ -155,3 +155,17 @@ historical planning documents can be removed in a later cleanup branch after
 their useful persistence, comparison, media, and dashboard dependencies are
 classified. They are retained here so publication does not silently remove the
 known fallback.
+
+## Known incomplete acceptance boundaries
+
+- Agent-side Reactor preparation, browser media finalization, pair status, and
+  visual assessment are implemented, but the live Reactor capture was not run
+  because the test environment had no `REACTOR_API_KEY`.
+- The current `/reactor` client prepares a fresh pair from a selected Isaac run.
+  It does not yet load an already-pending agent-created `pair_id`. Complete the
+  handoff by adding a safe prepared-pair GET endpoint and supporting
+  `/reactor?pair_id=<id>` before claiming the agent-prepared browser flow works.
+- SQLite session resume was proven while the pair was pending. Resume after a
+  completed real Reactor capture and automatic comparison remains unaccepted.
+- The one-run budget and changed-parameter checks are implemented, but a second
+  real agent-selected Isaac iteration was not executed in the acceptance run.
