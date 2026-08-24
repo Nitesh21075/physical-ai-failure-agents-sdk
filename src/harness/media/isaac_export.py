@@ -1,4 +1,4 @@
-"""Export Isaac camera arrays into derived previews without touching raw frames."""
+"""Export Isaac camera arrays or image frames into derived previews without touching raw frames."""
 
 from __future__ import annotations
 
@@ -27,10 +27,15 @@ def _frame_paths(run_directory: Path, project_root: Path) -> list[Path]:
         path = Path(ref)
         if not path.exists() and ref.startswith("/workspace/project/"):
             path = project_root / ref.removeprefix("/workspace/project/")
-        if path.suffix == ".npy" and path.exists() and path not in frames:
+        if path.suffix.lower() in {".npy", ".png", ".jpg", ".jpeg", ".webp"} and path.exists() and path not in frames:
             frames.append(path)
-    if not frames:
-        frames = sorted((run_directory.parent / "camera").glob("**/*.npy"))
+    discovered = sorted(
+        path
+        for path in (run_directory / "camera").glob("**/*")
+        if path.suffix.lower() in {".npy", ".png", ".jpg", ".jpeg", ".webp"}
+    )
+    if discovered:
+        frames = discovered
     return frames
 
 
@@ -45,6 +50,13 @@ def _load_camera_array(array_path: Path) -> np.ndarray | None:
 
 
 def _write_png(array_path: Path, target: Path) -> bool:
+    if array_path.suffix.lower() != ".npy":
+        try:
+            with Image.open(array_path) as image:
+                image.convert("RGB").save(target)
+            return True
+        except (OSError, ValueError):
+            return False
     array = _load_camera_array(array_path)
     if array is None:
         return False
@@ -78,7 +90,7 @@ def export_isaac_replay(run_directory: str | Path, fps: int = 5) -> dict[str, An
     project_root = runs_root.parent if runs_root is not None else run_directory.parent
     source_frames = _frame_paths(run_directory, project_root)
     if not source_frames:
-        raise FileNotFoundError(f"no Isaac .npy camera frames found for {run_directory}")
+        raise FileNotFoundError(f"no Isaac camera frames found for {run_directory}")
     output = run_directory / "media" / "isaac_replay"
     frames_dir = output / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)

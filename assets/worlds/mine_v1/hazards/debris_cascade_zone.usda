@@ -1,0 +1,111 @@
+#usda 1.0
+(
+    defaultPrim = "DebrisCascadeZone"
+)
+
+def Xform "DebrisCascadeZone" (
+    customData = {
+        string harness_hazard_type = "compact_rover_nudged_debris_cascade"
+        string harness_physical_mechanism = "A rover may nudge the exposed Debris01 block into two separately simulated, loosely stacked debris bodies. No event trigger or animated cascade is used."
+        string harness_status = "physics_authored_pending_dedicated_physx_recording"
+    }
+)
+{
+    def Xform "Debris01" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+        customData = {
+            string harness_role = "rover_nudge_debris"
+            float harness_mass_kg = 16
+        }
+    )
+    {
+        double3 xformOp:translate = (43.0, -0.35, 0.38)
+        float3 xformOp:rotateXYZ = (0, 0, 7)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        bool physics:rigidBodyEnabled = true
+        bool physics:kinematicEnabled = false
+        float physics:mass = 16
+        def Cube "CollisionAndVisual" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            float3 xformOp:scale = (0.72, 0.45, 0.35)
+            uniform token[] xformOpOrder = ["xformOp:scale"]
+            bool physics:collisionEnabled = true
+            rel material:binding = </World/Looks/Concrete>
+            rel material:binding:physics = </World/PhysicsMaterials/RoughConcrete>
+        }
+    }
+
+    def Xform "Debris02" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+        customData = {
+            string harness_role = "cascade_debris"
+            float harness_mass_kg = 11
+        }
+    )
+    {
+        double3 xformOp:translate = (44.15, -0.10, 0.36)
+        float3 xformOp:rotateXYZ = (7, 0, -18)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        bool physics:rigidBodyEnabled = true
+        bool physics:kinematicEnabled = false
+        float physics:mass = 11
+        def Cube "CollisionAndVisual" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            float3 xformOp:scale = (0.58, 0.38, 0.30)
+            uniform token[] xformOpOrder = ["xformOp:scale"]
+            bool physics:collisionEnabled = true
+            rel material:binding = </World/Looks/Rock>
+            rel material:binding:physics = </World/PhysicsMaterials/LooseRockContact>
+        }
+    }
+
+    def Xform "Debris03" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+        customData = {
+            string harness_role = "cascade_debris"
+            float harness_mass_kg = 8
+        }
+    )
+    {
+        double3 xformOp:translate = (44.65, 0.28, 0.62)
+        float3 xformOp:rotateXYZ = (0, 11, 15)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        bool physics:rigidBodyEnabled = true
+        bool physics:kinematicEnabled = false
+        float physics:mass = 8
+        def Cube "CollisionAndVisual" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            float3 xformOp:scale = (0.40, 0.32, 0.28)
+            uniform token[] xformOpOrder = ["xformOp:scale"]
+            bool physics:collisionEnabled = true
+            rel material:binding = </World/Looks/Concrete>
+            rel material:binding:physics = </World/PhysicsMaterials/RoughConcrete>
+        }
+    }
+
+    def Xform "InteractionTarget" (
+        customData = {
+            string harness_role = "debris_cascade_rover_approach_target"
+            double3 harness_target_pose = (41.8, -0.35, 0.05)
+            string harness_expected_heading = "+X"
+        }
+    )
+    {
+        double3 xformOp:translate = (41.8, -0.35, 0.05)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        def Cylinder "Marker"
+        {
+            float radius = 0.20
+            float height = 0.10
+            double3 xformOp:translate = (0, 0, 0.05)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+            rel material:binding = </World/Looks/LampGlow>
+        }
+    }
+}

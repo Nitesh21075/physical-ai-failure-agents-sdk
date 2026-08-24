@@ -1,0 +1,63 @@
+#usda 1.0
+(
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "World"
+{
+    def PhysicsScene "PhysicsScene" (
+        customData = {
+            string harness_role = "physics_scene"
+            string harness_units = "meters, kilograms, seconds"
+        }
+    )
+    {
+        vector3f physics:gravityDirection = (0, 0, -1)
+        float physics:gravityMagnitude = 9.81
+        int physxScene:solverPositionIterationCount = 16
+        int physxScene:solverVelocityIterationCount = 2
+        bool physxScene:enableCCD = true
+    }
+
+    def Scope "PhysicsMaterials"
+    {
+        def Material "RoughConcrete" (
+            prepend apiSchemas = ["PhysicsMaterialAPI"]
+        )
+        {
+            float physics:staticFriction = 0.85
+            float physics:dynamicFriction = 0.70
+            float physics:restitution = 0.05
+        }
+
+        def Material "SteelContact" (
+            prepend apiSchemas = ["PhysicsMaterialAPI"]
+        )
+        {
+            float physics:staticFriction = 0.55
+            float physics:dynamicFriction = 0.42
+            float physics:restitution = 0.08
+        }
+
+        def Material "UnstableSupportContact" (
+            prepend apiSchemas = ["PhysicsMaterialAPI"]
+        )
+        {
+            # Deliberately lower than the surrounding concrete: this is the
+            # tunable contact material for the marginal roof support.
+            float physics:staticFriction = 0.26
+            float physics:dynamicFriction = 0.20
+            float physics:restitution = 0.03
+        }
+
+        def Material "LooseRockContact" (
+            prepend apiSchemas = ["PhysicsMaterialAPI"]
+        )
+        {
+            float physics:staticFriction = 0.42
+            float physics:dynamicFriction = 0.34
+            float physics:restitution = 0.08
+        }
+    }
+}

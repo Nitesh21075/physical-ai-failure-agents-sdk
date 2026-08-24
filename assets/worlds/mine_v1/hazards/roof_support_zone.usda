@@ -1,0 +1,162 @@
+#usda 1.0
+(
+    defaultPrim = "RoofSupportZone"
+)
+
+def Xform "RoofSupportZone" (
+    customData = {
+        string harness_hazard_type = "rover_caused_marginal_roof_support"
+        string harness_physical_mechanism = "BeamPrimary is a dynamic rigid body supported only by the separate, low-friction SupportPrimary. Rover chassis contact can displace SupportPrimary laterally; beam gravity and contact then determine the fall."
+        string harness_activation = "drive to the negative-Y side of SupportPrimary and continue in positive Y through InteractionTarget"
+        string harness_status = "physics_authored_pending_target_workstation_smoke"
+        string harness_parameterization = "Override SupportPrimary xformOp:translate, xformOp:rotateXYZ, physics:mass, material:binding:physics; BeamPrimary physics:mass and xformOp:translate; /World/Robot xformOp:translate."
+    }
+)
+{
+    def Xform "BeamPrimary" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+        customData = {
+            string harness_role = "collapsible_overhead_beam"
+            string harness_failure_role = "gravity_contact_failure_after_support_loss"
+            float harness_beam_mass_kg = 46
+            double3 harness_initial_pose = (24, 0, 3.25)
+        }
+    )
+    {
+        double3 xformOp:translate = (24, 0, 3.25)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        bool physics:rigidBodyEnabled = true
+        bool physics:kinematicEnabled = false
+        float physics:mass = 46
+        def Cube "CollisionAndVisual" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            float3 xformOp:scale = (2.1, 0.40, 0.24)
+            uniform token[] xformOpOrder = ["xformOp:scale"]
+            bool physics:collisionEnabled = true
+            rel material:binding = </World/Looks/Steel>
+            rel material:binding:physics = </World/PhysicsMaterials/SteelContact>
+        }
+        def Cube "HazardStripe"
+        {
+            double3 xformOp:translate = (0, -0.43, 0)
+            float3 xformOp:scale = (0.65, 0.015, 0.26)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            rel material:binding = </World/Looks/SafetyYellow>
+        }
+    }
+
+    def Xform "SupportPrimary" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+        customData = {
+            string harness_role = "marginal_movable_roof_support"
+            string harness_interactive = "true"
+            string harness_rover_contact = "rover approaches the negative-Y PushFace and drives positive Y"
+            float harness_support_initial_offset_y = 0
+            float harness_support_mass_kg = 8
+            float harness_support_static_friction = 0.26
+            string harness_override_properties = "xformOp:translate, xformOp:rotateXYZ, physics:mass, material:binding:physics"
+        }
+    )
+    {
+        double3 xformOp:translate = (24, 0, 1.5)
+        float3 xformOp:rotateXYZ = (0, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        bool physics:rigidBodyEnabled = true
+        bool physics:kinematicEnabled = false
+        float physics:mass = 8
+        def Cube "CollisionAndVisual" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            float3 xformOp:scale = (0.32, 0.36, 1.5)
+            uniform token[] xformOpOrder = ["xformOp:scale"]
+            bool physics:collisionEnabled = true
+            rel material:binding = </World/Looks/SafetyYellow>
+            rel material:binding:physics = </World/PhysicsMaterials/UnstableSupportContact>
+        }
+        def Cube "BasePlate"
+        {
+            double3 xformOp:translate = (0, 0, -1.48)
+            float3 xformOp:scale = (0.46, 0.50, 0.025)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            rel material:binding = </World/Looks/Steel>
+        }
+        def Cube "PushFace" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+            customData = {
+                string harness_role = "rover_contact_surface"
+                string harness_push_direction = "+Y"
+                string harness_effect = "moves the separate support clear of the beam's footprint"
+            }
+        )
+        {
+            double3 xformOp:translate = (0, -0.60, -1.02)
+            float3 xformOp:scale = (0.62, 0.13, 0.25)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            bool physics:collisionEnabled = true
+            rel material:binding = </World/Looks/SafetyYellow>
+            rel material:binding:physics = </World/PhysicsMaterials/UnstableSupportContact>
+        }
+    }
+
+    # A clearly shorter nearby timber tells an operator that this bay is
+    # marginal without becoming a hidden second contact support for the beam.
+    def Xform "SupportSecondary" (
+        customData = {
+            string harness_role = "visual_secondary_support_not_load_bearing"
+            string harness_note = "Intentionally has no collider and is below BeamPrimary."
+        }
+    )
+    {
+        double3 xformOp:translate = (25.65, 1.25, 1.28)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        def Cube "Visual"
+        {
+            float3 xformOp:scale = (0.18, 0.18, 1.28)
+            uniform token[] xformOpOrder = ["xformOp:scale"]
+            rel material:binding = </World/Looks/Steel>
+        }
+    }
+
+    def Xform "InteractionTarget" (
+        customData = {
+            string harness_role = "roof_support_rover_approach_target"
+            double3 harness_target_pose = (24, -1.40, 0.05)
+            string harness_expected_heading = "+Y"
+        }
+    )
+    {
+        double3 xformOp:translate = (24, -1.40, 0.05)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        def Cylinder "Marker"
+        {
+            float radius = 0.24
+            float height = 0.10
+            double3 xformOp:translate = (0, 0, 0.05)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+            rel material:binding = </World/Looks/LampGlow>
+        }
+    }
+
+    def Xform "InspectionMarker" (
+        customData = {
+            string harness_role = "deterministic_rover_inspection_marker"
+            double3 harness_target_pose = (22.6, -1.40, 0.05)
+            string harness_note = "A controller may stop here before its straight positive-Y contact approach."
+        }
+    )
+    {
+        double3 xformOp:translate = (22.6, -1.40, 0.05)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        def Cylinder "Marker"
+        {
+            float radius = 0.16
+            float height = 0.08
+            double3 xformOp:translate = (0, 0, 0.04)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+            rel material:binding = </World/Looks/SafetyYellow>
+        }
+    }
+}

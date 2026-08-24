@@ -1,0 +1,143 @@
+#usda 1.0
+
+def Xform "World"
+{
+    def Xform "Environment" (
+        kind = "assembly"
+        customData = {
+            string harness_role = "static_environment"
+            string harness_physics_policy = "static_colliders_only"
+        }
+    )
+    {
+        def Xform "MineShell" (
+            customData = {
+                string harness_description = "40m long mine drift shell; static scenery"
+            }
+        )
+        {
+            def Cube "RockBackstop" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                # Moved to the new far drift face.  The original end wall
+                # occupied the only connection to the extension.
+                double3 xformOp:translate = (49.8, 0, 2)
+                float3 xformOp:scale = (0.2, 4.2, 2.2)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                bool physics:collisionEnabled = true
+                rel material:binding = </World/Looks/Rock>
+            }
+        }
+
+        def Cube "Floor" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+            customData = {
+                string harness_role = "static_floor_collider"
+                float harness_static_friction = 0.85
+            }
+        )
+        {
+            double3 xformOp:translate = (4, 0, -0.25)
+            float3 xformOp:scale = (14, 4, 0.25)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            bool physics:collisionEnabled = true
+            rel material:binding = </World/Looks/Concrete>
+        }
+
+        def Xform "Walls"
+        {
+            def Cube "WallLeft" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                double3 xformOp:translate = (4, 4.15, 2)
+                float3 xformOp:scale = (14, 0.25, 2.25)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                bool physics:collisionEnabled = true
+                rel material:binding = </World/Looks/Rock>
+            }
+            def Cube "WallRight" (
+                prepend apiSchemas = ["PhysicsCollisionAPI"]
+            )
+            {
+                double3 xformOp:translate = (4, -4.15, 2)
+                float3 xformOp:scale = (14, 0.25, 2.25)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                bool physics:collisionEnabled = true
+                rel material:binding = </World/Looks/Rock>
+            }
+        }
+
+        def Cube "Ceiling" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            double3 xformOp:translate = (4, 0, 4.25)
+            float3 xformOp:scale = (14, 4.2, 0.25)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            bool physics:collisionEnabled = true
+            rel material:binding = </World/Looks/Rock>
+        }
+
+        def Xform "StaticProps"
+        {
+            def Cube "Rib01"
+            {
+                double3 xformOp:translate = (-6, -3.72, 2.1)
+                float3 xformOp:scale = (0.12, 0.12, 2.05)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Looks/Steel>
+            }
+            def Cube "Rib02"
+            {
+                double3 xformOp:translate = (-6, 3.72, 2.1)
+                float3 xformOp:scale = (0.12, 0.12, 2.05)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Looks/Steel>
+            }
+            def Cube "Rib03"
+            {
+                double3 xformOp:translate = (0, -3.72, 2.1)
+                float3 xformOp:scale = (0.12, 0.12, 2.05)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Looks/Steel>
+            }
+            def Cube "Rib04"
+            {
+                double3 xformOp:translate = (0, 3.72, 2.1)
+                float3 xformOp:scale = (0.12, 0.12, 2.05)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Looks/Steel>
+            }
+            def Cube "Rib05"
+            {
+                double3 xformOp:translate = (6, -3.72, 2.1)
+                float3 xformOp:scale = (0.12, 0.12, 2.05)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Looks/Steel>
+            }
+            def Cube "Rib06"
+            {
+                double3 xformOp:translate = (6, 3.72, 2.1)
+                float3 xformOp:scale = (0.12, 0.12, 2.05)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Looks/Steel>
+            }
+            def Cube "UtilityPipe"
+            {
+                double3 xformOp:translate = (4, -3.55, 3.55)
+                float3 xformOp:scale = (14, 0.10, 0.10)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Looks/SafetyYellow>
+            }
+            def Cube "WarningStripe"
+            {
+                double3 xformOp:translate = (-3, -3.86, 1.1)
+                float3 xformOp:scale = (1.15, 0.02, 0.32)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+                rel material:binding = </World/Looks/SafetyYellow>
+            }
+        }
+    }
+}

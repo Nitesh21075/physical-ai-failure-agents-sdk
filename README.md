@@ -2,9 +2,40 @@
 
 An experimental harness for discovering and collecting rare environmental failure trajectories for physical AI.
 
+## Primary runtime: OpenAI Agents SDK
+
+The primary mine research runtime is one persistent tool-using agent,
+`MineFailureResearcher`, built with the official Python `openai-agents` package.
+The Agents SDK `Runner` owns the model/tool loop; host code does not prescribe a
+fixed inspect → simulate → compare sequence.
+
+```bash
+python -m venv .venv
+.venv/bin/pip install -e '.[research,dev]'
+export OPENAI_API_KEY='<key>'
+export AGENT_MODEL='<model available to this account>'
+
+.venv/bin/python scripts/run_agents_researcher.py \
+  'Investigate roof-support failure in the mine. Use tools.' \
+  --experiment-budget 2
+```
+
+The CLI prints a campaign ID. Reuse it in a later process to continue the same
+SQLite-backed agent conversation:
+
+```bash
+.venv/bin/python scripts/run_agents_researcher.py \
+  'Continue the research campaign.' \
+  --campaign-id '<campaign-id>'
+```
+
+See [`docs/AGENTS_SDK_RUNTIME.md`](docs/AGENTS_SDK_RUNTIME.md) for the exact
+runtime call graph, model-visible tools, persistence boundaries, and the legacy
+fallback boundary.
+
 The core idea is to run robot experiments in interchangeable environments (initially Isaac Sim, later neural world models such as Reactor) and record the resulting actions, observations, world state, and environmental consequences.
 
-## Current plans
+## Legacy fallback and historical plans
 
 - **Plan B — Failure Research Harness:** build the reusable closed-loop orchestration/data-collection system first.
 - **Plan A — Neural World Model Environment:** if the available world-model API supports closed-loop robotics interaction, make the neural world model the primary environment.

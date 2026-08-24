@@ -1,0 +1,80 @@
+#usda 1.0
+(
+    defaultPrim = "Zone_Debris"
+)
+
+def Xform "Zone_Debris" (
+    customData = {
+        string harness_hazard_type = "debris_blocked_passage"
+        string harness_activation = "push or reposition Debris01/Debris02; preserve base stage and author overrides"
+        string harness_status = "staged_rigid_body_hazard"
+    }
+)
+{
+    def Xform "Debris01" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+        customData = {
+            string harness_role = "pushable_debris"
+            string harness_interactive = "true"
+        }
+    )
+    {
+        double3 xformOp:translate = (-3.0, -0.7, 0.46)
+        float3 xformOp:rotateXYZ = (0, 0, 12)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        bool physics:rigidBodyEnabled = true
+        float physics:mass = 30
+        def Cube "CollisionAndVisual" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            float3 xformOp:scale = (0.9, 0.55, 0.42)
+            uniform token[] xformOpOrder = ["xformOp:scale"]
+            bool physics:collisionEnabled = true
+            rel material:binding = </World/Looks/Concrete>
+        }
+    }
+
+    def Xform "Debris02" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+        customData = {
+            string harness_role = "pushable_debris"
+            string harness_interactive = "true"
+        }
+    )
+    {
+        double3 xformOp:translate = (-2.2, 0.5, 0.30)
+        float3 xformOp:rotateXYZ = (8, 0, -23)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        bool physics:rigidBodyEnabled = true
+        float physics:mass = 18
+        def Cube "CollisionAndVisual" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            float3 xformOp:scale = (0.65, 0.45, 0.28)
+            uniform token[] xformOpOrder = ["xformOp:scale"]
+            bool physics:collisionEnabled = true
+            rel material:binding = </World/Looks/Rock>
+        }
+    }
+
+    def Xform "InteractionTarget" (
+        customData = {
+            string harness_role = "debris_interaction_target"
+            string harness_interactive = "true"
+        }
+    )
+    {
+        double3 xformOp:translate = (-3.8, -1.5, 0.06)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        def Cylinder "Marker"
+        {
+            float radius = 0.20
+            float height = 0.10
+            double3 xformOp:translate = (0, 0, 0.05)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+            rel material:binding = </World/Looks/LampGlow>
+        }
+    }
+}

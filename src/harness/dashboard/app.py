@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from harness.agent_runtime.service import MineFailureResearchService
 from harness.pairing import PairedCaptureService, PairingError
 from harness.persistence.store import ExperimentStore, ReviewState
 from harness.research.campaign import CampaignState, ResearchCampaignStore
@@ -85,6 +86,15 @@ class PairCaptureCreate(BaseModel):
     model: str | None = None
 
 
+class AgentCampaignCreate(BaseModel):
+    objective: str
+    experiment_budget: int = 3
+
+
+class AgentStepCreate(BaseModel):
+    instruction: str
+
+
 _STYLE = """
 :root{--bg:#0a1020;--panel:#101a30;--line:#263552;--text:#edf3ff;--muted:#9dabc2;--isaac:#3ad8b0;--reactor:#ae8cff;--red:#ff6685;--amber:#ffbf5c;--green:#57d68d;--blue:#69b9ff}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 18% 0,#172948 0,transparent 35%),var(--bg);color:var(--text);font:15px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:inherit;text-decoration:none}button,select{font:inherit}button{cursor:pointer}.shell{max-width:1500px;margin:auto;padding:28px}.topbar{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:25px}.eyebrow{color:var(--blue);font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}.title{font-size:clamp(28px,4vw,46px);letter-spacing:-.04em;margin:3px 0 7px}.subtitle{margin:0;color:var(--muted);font-size:16px}.authority{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:7px 11px;color:var(--muted);font-size:12px;white-space:nowrap}.dot{width:7px;height:7px;border-radius:50%;background:var(--reactor)}.grid{display:grid;gap:16px}.summary-grid{grid-template-columns:repeat(4,1fr);margin:22px 0}.card,.metric,.viewport,.details-card{background:linear-gradient(145deg,rgba(25,38,65,.95),rgba(15,25,45,.95));border:1px solid var(--line);border-radius:16px;box-shadow:0 18px 45px rgba(0,0,0,.16)}.metric{padding:16px}.metric .number{font-size:27px;font-weight:800;letter-spacing:-.04em}.metric .label,.micro{color:var(--muted);font-size:12px}.section-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:30px 0 14px}.section-head h2{font-size:18px;margin:0}.pairs{grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}.pair-card{padding:14px;transition:transform .16s,border-color .16s}.pair-card:hover{transform:translateY(-2px);border-color:#4d6391}.pair-card .visuals{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:13px 0}.thumb{height:116px;background:#0a1223;border-radius:10px;overflow:hidden;display:grid;place-items:center;color:var(--muted);font-size:12px}.thumb img{width:100%;height:100%;object-fit:cover}.pair-title{font-weight:750;font-size:17px;margin:2px 0}.pair-meta{color:var(--muted);font-size:13px}.row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.spread{justify-content:space-between}.badge{display:inline-flex;align-items:center;border:1px solid currentColor;border-radius:99px;padding:3px 8px;font-size:11px;font-weight:800;letter-spacing:.02em;text-transform:uppercase}.badge.red{color:var(--red);background:#ff668515}.badge.amber{color:var(--amber);background:#ffbf5c15}.badge.green{color:var(--green);background:#57d68d15}.badge.isaac{color:var(--isaac);background:#3ad8b015}.badge.reactor{color:var(--reactor);background:#ae8cff15}.primary-action{display:inline-flex;background:var(--blue);color:#071222;border-radius:8px;padding:8px 11px;font-size:13px;font-weight:800}.standalone{padding:0 15px 14px}.standalone summary{padding:14px 0;cursor:pointer;font-weight:700}.run-row{display:flex;justify-content:space-between;gap:14px;padding:12px 0;border-top:1px solid var(--line);color:var(--muted)}.run-row strong{color:var(--text)}.back{color:var(--muted);font-weight:700;font-size:13px}.pair-top{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px}.pair-name{font-weight:800;font-size:20px}.summary-strip{grid-template-columns:repeat(4,1fr);margin:0 0 18px}.summary-strip .metric{min-height:104px}.summary-strip strong{display:block;font-size:15px;margin:4px 0}.comparison-grid{grid-template-columns:1fr 1fr;gap:18px}.viewport{overflow:hidden;min-width:0}.viewport-head{padding:15px 16px 12px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.viewport h2{font-size:18px;margin:0}.viewport.isaac{border-top:3px solid var(--isaac)}.viewport.reactor{border-top:3px solid var(--reactor)}.media-stage{height:min(54vh,590px);min-height:350px;background:#050a14;display:grid;place-items:center;position:relative}.media-stage video,.media-stage img{height:100%;width:100%;object-fit:contain}.empty-media{color:var(--muted);max-width:250px;text-align:center}.media-controls{padding:10px 14px;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line);color:var(--muted);font-size:12px}.media-controls button{background:transparent;border:1px solid var(--line);color:var(--text);border-radius:7px;padding:5px 9px}.media-controls button:disabled{opacity:.35;cursor:not-allowed}.filmstrip{display:flex;gap:8px;overflow:auto;padding:10px 13px 14px;background:#0b1426}.filmstrip button{padding:0;border:2px solid transparent;border-radius:7px;background:#111;min-width:72px;height:53px;overflow:hidden}.filmstrip button.active{border-color:var(--blue)}.filmstrip img{width:100%;height:100%;object-fit:cover}.below-grid{grid-template-columns:1.05fr .95fr .8fr;margin-top:18px}.details-card{padding:16px}.details-card h2{font-size:16px;margin:0 0 10px}.details-card p{margin:6px 0;color:var(--muted)}.timeline{list-style:none;margin:0;padding:0}.timeline li{border-left:2px solid var(--line);padding:0 0 12px 13px;margin-left:5px;position:relative}.timeline li:before{content:"";position:absolute;width:9px;height:9px;border-radius:50%;left:-5.5px;top:5px;background:var(--blue)}.timeline li.environmental_event:before,.timeline li.termination:before{background:var(--red)}.timeline .time{color:var(--blue);font-size:12px;font-weight:800}.review select{width:100%;background:#0c1527;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px}.review button{background:var(--blue);color:#071222;border:0;border-radius:8px;padding:9px 12px;font-weight:800;margin-top:9px}.save-status{min-height:20px;font-size:12px;color:var(--green);margin:8px 0 0}.technical{margin-top:18px}.technical details{border-top:1px solid var(--line);padding:12px 0}.technical summary{cursor:pointer;font-weight:700}.technical pre{white-space:pre-wrap;overflow:auto;color:var(--muted);font-size:12px;margin:10px 0 0}.artifact-links a{display:inline-block;margin:0 7px 7px 0;color:var(--blue);font-size:12px}.notice{border-left:3px solid var(--amber);padding:8px 10px;background:#ffbf5c10;color:#ffd99a;font-size:13px;border-radius:0 8px 8px 0}@media(max-width:900px){.summary-grid,.summary-strip,.below-grid{grid-template-columns:repeat(2,1fr)}.comparison-grid{grid-template-columns:1fr}.media-stage{height:55vw;min-height:300px}.topbar{display:block}.authority{margin-top:14px}}@media(max-width:560px){.shell{padding:18px}.summary-grid,.summary-strip{grid-template-columns:1fr}.run-row{display:block}.run-row>*{display:block;margin:3px 0}.media-stage{min-height:240px}}
 """
@@ -103,7 +113,10 @@ _RECORDING_SELECTOR_STYLE = """
 """
 
 _LIBRARY_BODY = """
-<div class="shell"><header class="topbar"><div><div class="eyebrow">Plan C experiment review</div><h1 class="title">Physical AI Failure Harness</h1><p class="subtitle">Visual comparison of physics-grounded simulation and neural-world evidence.</p></div><div class="row"><a class="primary-action" href="/reactor">Open live Reactor</a><div class="authority"><span class="dot"></span>Reactor evidence is not physics ground truth</div></div></header><section class="grid summary-grid" id="metrics"></section><section><div class="section-head"><h2>Paired experiment library</h2><span class="micro">Select a recording to review the comparison</span></div><div class="grid pairs" id="pairs"></div></section><details class="card standalone"><summary>Standalone experiments <span class="micro">(recorded without a paired comparison)</span></summary><div id="runs"></div></details></div>
+<div class="shell"><header class="topbar"><div><div class="eyebrow">Plan C experiment review</div><h1 class="title">Physical AI Failure Harness</h1><p class="subtitle">Visual comparison of physics-grounded simulation and neural-world evidence.</p></div><div class="row"><a class="primary-action" href="/agent">Research agent</a><a class="primary-action" href="/reactor">Open live Reactor</a><div class="authority"><span class="dot"></span>Reactor evidence is not physics ground truth</div></div></header><section class="grid summary-grid" id="metrics"></section><section><div class="section-head"><h2>Paired experiment library</h2><span class="micro">Select a recording to review the comparison</span></div><div class="grid pairs" id="pairs"></div></section><details class="card standalone"><summary>Standalone experiments <span class="micro">(recorded without a paired comparison)</span></summary><div id="runs"></div></details></div>
+"""
+_AGENT_BODY = """
+<div class="shell"><header class="topbar"><div><div class="eyebrow">OpenAI Agents SDK</div><h1 class="title">MineFailureResearcher</h1><p class="subtitle">One persistent tool-using researcher. Scientific evidence remains in the experiment store.</p></div><a class="back" href="/">← Experiment library</a></header><section class="grid comparison-grid"><article class="details-card reactor-controls"><h2>Campaign</h2><label>Existing campaign<select id="agent-campaign"><option value="">Create or select a campaign…</option></select></label><label>Objective<textarea id="agent-objective" rows="3">Investigate roof-support failure in the mine and compare Isaac with Reactor.</textarea></label><label>Experiment budget<input id="agent-budget" type="number" min="1" max="20" value="3"></label><button class="live-primary" id="agent-create">Create campaign</button><label>Research instruction<textarea id="agent-instruction" rows="5">Investigate roof-support failure in the mine. Inspect the world and previous evidence, then choose at most one useful experiment.</textarea></label><div class="row"><button class="live-primary" id="agent-step">Run research step</button><button id="agent-continue">Continue</button></div><p class="save-status" id="agent-message" role="status"></p></article><article class="details-card"><h2>Current research state</h2><div id="agent-summary" class="notice">Select or create a campaign.</div><div class="row" id="agent-links"></div><h2>Agent/tool events</h2><pre id="agent-events" style="white-space:pre-wrap;max-height:52vh;overflow:auto"></pre></article></section></div><script type="module" src="/static/agent-runtime.js"></script>
 """
 _REACTOR_BODY = """
 <div class="shell reactor-live"><header class="topbar"><div><div class="eyebrow">Live neural-world session</div><h1 class="title">Reactor control room</h1><p class="subtitle">Navigate a LingBot World 2 video world in real time. This is visual evidence, not a physics simulator.</p></div><div class="row"><a class="back" href="/">← Experiment library</a><span class="authority"><span class="dot"></span><span id="reactor-status">Checking configuration…</span></span></div></header><div class="grid reactor-layout"><section class="viewport reactor"><div class="viewport-head"><div><span class="badge reactor">Reactor / LingBot World 2</span><h2>Live video</h2></div><span class="micro" id="chunk-status">No session</span></div><div class="media-stage"><video id="reactor-video" autoplay playsinline muted></video><div class="empty-media" id="video-placeholder">Connect a session, choose a seed image, and start generating.</div></div></section><aside class="details-card reactor-controls"><h2>Paired capture</h2><label>Isaac recording<select id="paired-isaac-run"><option>Loading Isaac recordings…</option></select></label><label>Research objective<textarea id="paired-objective" rows="2" placeholder="Optional context for the world-model prompt."></textarea></label><div class="row"><button class="live-primary" id="prepare-pair">Prepare paired run</button><button id="finish-pair" disabled>Finish & save pair</button></div><p class="micro">Preparation sends the Isaac initial frame and structured context to Responses, then starts and records the Reactor session.</p><h2>Manual session</h2><label>Scene prompt<textarea id="reactor-prompt" rows="5" placeholder="Describe the world you want to explore."></textarea></label><label>Seed image<input id="reactor-image" type="file" accept="image/*"></label><label>Seed<input id="reactor-seed" type="number" min="0" value="42"></label><label>Look speed <span id="speed-value">5°/frame</span><input id="reactor-speed" type="range" min="0" max="30" value="5"></label><div class="row"><button id="connect-reactor">Connect</button><button id="start-reactor" disabled>Start manual world</button></div><div class="row"><button id="pause-reactor" disabled>Pause</button><button id="reset-reactor" disabled>Reset</button></div><p class="save-status" id="reactor-message" role="status"></p><p class="micro">Controls change at the next generated chunk. Stop controls are sent explicitly when a key is released.</p></aside></div><section class="details-card navigation"><div class="section-head"><h2>Navigation</h2><span class="micro">WASD moves · arrow keys look · release to stop</span></div><div class="nav-grids"><div class="nav-group"><h3>Move</h3><div class="control-pad"><button class="north" data-control="move_longitudinal" data-value="forward" aria-label="Move forward">W</button><button class="west" data-control="move_lateral" data-value="strafe_left" aria-label="Strafe left">A</button><button class="east" data-control="move_lateral" data-value="strafe_right" aria-label="Strafe right">D</button><button class="south" data-control="move_longitudinal" data-value="back" aria-label="Move backward">S</button></div></div><div class="nav-group"><h3>Look</h3><div class="control-pad"><button class="north" data-control="look_vertical" data-value="up" aria-label="Look up">↑</button><button class="west" data-control="look_horizontal" data-value="left" aria-label="Look left">←</button><button class="east" data-control="look_horizontal" data-value="right" aria-label="Look right">→</button><button class="south" data-control="look_vertical" data-value="down" aria-label="Look down">↓</button></div></div></div><button id="stop-reactor">Stop all motion</button></section><section class="technical details-card"><details><summary>Transport boundary</summary><p>A paired capture records browser-received Reactor video and writes a Plan C pair after you finish it. The comparison remains semantically aligned visual evidence, not synchronized physical replay.</p></details></section></div><script type="module" src="/static/reactor-live.js"></script>
@@ -167,6 +180,10 @@ def create_app(store: ExperimentStore) -> FastAPI:
     def reactor_page() -> HTMLResponse:
         return _page(_REACTOR_BODY, "reactor")
 
+    @app.get("/agent", response_class=HTMLResponse)
+    def agent_page() -> HTMLResponse:
+        return _page(_AGENT_BODY, "agent")
+
     @app.get("/api/reactor/live-config")
     def reactor_live_config() -> dict[str, Any]:
         return {"enabled": bool(os.environ.get("REACTOR_API_KEY")), "model": "reactor/lingbot-world-2"}
@@ -190,7 +207,9 @@ def create_app(store: ExperimentStore) -> FastAPI:
 
     @app.post("/api/pair-captures", status_code=201)
     def prepare_pair_capture(payload: PairCaptureCreate) -> dict[str, Any]:
-        model = payload.model or os.environ.get("RESEARCH_MODEL", "gpt-5.6-luna")
+        model = payload.model or os.environ.get("AGENT_MODEL") or os.environ.get("RESEARCH_MODEL")
+        if not model:
+            raise HTTPException(503, "AGENT_MODEL or RESEARCH_MODEL must be configured")
         try:
             return paired_capture.prepare(payload.isaac_run_id, objective=payload.objective, model=model)
         except (PairingError, RuntimeError, ValueError) as error:
@@ -247,6 +266,59 @@ def create_app(store: ExperimentStore) -> FastAPI:
         if not result:
             raise HTTPException(404, "campaign not found")
         return {**result, "current_iteration_detail": research.latest_iteration(campaign_id), "events": research.list_events(campaign_id)}
+
+    def agent_service() -> MineFailureResearchService:
+        model = os.environ.get("AGENT_MODEL") or os.environ.get("RESEARCH_MODEL")
+        if not model:
+            raise HTTPException(503, "AGENT_MODEL or RESEARCH_MODEL must be configured")
+        return MineFailureResearchService(store.database_path.parent.parent, model=model)
+
+    @app.post("/api/agent/campaigns", status_code=201)
+    def create_agent_campaign(payload: AgentCampaignCreate) -> dict[str, Any]:
+        try:
+            service = agent_service()
+            campaign_id = service.create_campaign(
+                payload.objective, experiment_budget=payload.experiment_budget
+            )
+            return service.campaign_store.get_campaign(campaign_id) or {}
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @app.get("/api/agent/campaigns/{campaign_id}")
+    def agent_campaign(campaign_id: str) -> dict[str, Any]:
+        result = research.get_campaign(campaign_id)
+        if not result:
+            raise HTTPException(404, "campaign not found")
+        return {
+            **result,
+            "latest_iteration": research.latest_iteration(campaign_id),
+            "events": research.list_events(campaign_id),
+        }
+
+    @app.get("/api/agent/campaigns/{campaign_id}/events")
+    def agent_campaign_events(campaign_id: str) -> list[dict[str, Any]]:
+        if not research.get_campaign(campaign_id):
+            raise HTTPException(404, "campaign not found")
+        return research.list_events(campaign_id)
+
+    async def run_agent_step(campaign_id: str, instruction: str) -> dict[str, Any]:
+        if not instruction.strip():
+            raise HTTPException(400, "instruction must not be empty")
+        try:
+            result = await agent_service().run_step(campaign_id, instruction.strip())
+            return result.model_dump(mode="json")
+        except KeyError as error:
+            raise HTTPException(404, str(error)) from error
+        except (RuntimeError, ValueError) as error:
+            raise HTTPException(400, str(error)) from error
+
+    @app.post("/api/agent/campaigns/{campaign_id}/step")
+    async def agent_step(campaign_id: str, payload: AgentStepCreate) -> dict[str, Any]:
+        return await run_agent_step(campaign_id, payload.instruction)
+
+    @app.post("/api/agent/campaigns/{campaign_id}/continue")
+    async def continue_agent(campaign_id: str, payload: AgentStepCreate) -> dict[str, Any]:
+        return await run_agent_step(campaign_id, payload.instruction)
 
     @app.post("/api/campaigns/{campaign_id}/instructions", status_code=201)
     def add_campaign_instruction(campaign_id: str, payload: OperatorInstructionCreate) -> dict[str, str]:

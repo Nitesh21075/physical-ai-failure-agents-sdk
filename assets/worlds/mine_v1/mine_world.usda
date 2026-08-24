@@ -1,0 +1,187 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Z"
+    subLayers = [
+        @layers/physics_defaults.usda@,
+        @layers/materials.usda@,
+        @mine_base.usda@,
+        @layers/lighting.usda@
+    ]
+)
+
+def Xform "World" (
+    kind = "assembly"
+    customData = {
+        string harness_world_id = "mine_v1"
+        string harness_authoring_model = "composed_usd"
+        string harness_description = "Persistent underground mine failure-research environment"
+    }
+)
+{
+    def Scope "FailureZones" (
+        customData = {
+            string harness_role = "interactive_hazard_collection"
+        }
+    )
+    {
+        def Xform "Zone_RoofSupport" (
+            references = @hazards/roof_support.usda@
+        )
+        {
+        }
+
+        def Xform "Zone_Rockfall" (
+            references = @hazards/loose_rock.usda@
+        )
+        {
+        }
+
+        def Xform "Zone_Debris" (
+            references = @hazards/debris_pile.usda@
+        )
+        {
+        }
+
+        # The original Zone_* paths above remain stable for existing users.
+        # The named zones below are the extended, rover-caused demonstrations.
+        def Xform "RoofSupportZone" (
+            references = @hazards/roof_support_zone.usda@
+        )
+        {
+        }
+
+        def Xform "RockfallZone" (
+            references = @hazards/rockfall_zone.usda@
+        )
+        {
+        }
+
+        def Xform "DebrisCascadeZone" (
+            references = @hazards/debris_cascade_zone.usda@
+        )
+        {
+        }
+    }
+
+    over Xform "Environment"
+    {
+        def Xform "MineExtension" (
+            references = @sections/extended_drift.usda@
+            customData = {
+                string harness_role = "static_extended_drift"
+                string harness_description = "Connected 32m extension containing the rover failure-zone route"
+            }
+        )
+        {
+        }
+    }
+
+    def Xform "Robot" (
+        references = @robots/inspection_robot.usda@
+        customData = {
+            string harness_role = "robot_proxy"
+            string harness_swap_strategy = "replace this reference with a compatible wheeled robot asset"
+        }
+    )
+    {
+    }
+
+    def Scope "Sensors" (
+        customData = {
+            string harness_role = "fixed_research_sensors"
+        }
+    )
+    {
+        def Camera "ResearchCamera" (
+            customData = {
+                string harness_role = "plan_c_reference_camera"
+                string harness_purpose = "stable comparison view of robot and roof-support hazard"
+            }
+        )
+        {
+            float focalLength = 42
+            float horizontalAperture = 36
+            float horizontalApertureOffset = 0
+            float verticalAperture = 20.25
+            float verticalApertureOffset = 0
+            float2 clippingRange = (0.1, 10000)
+            float fStop = 0
+            double3 xformOp:translate = (11, -11, 7)
+            float3 xformOp:rotateXYZ = (65, 0, 45)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        }
+
+        def Camera "OverviewCamera" (
+            customData = {
+                string harness_role = "presentation_camera"
+                string harness_purpose = "wide human-inspection view"
+            }
+        )
+        {
+            float focalLength = 28
+            float horizontalAperture = 36
+            float verticalAperture = 20.25
+            float2 clippingRange = (0.1, 10000)
+            float fStop = 0
+            double3 xformOp:translate = (14, -17, 9)
+            float3 xformOp:rotateXYZ = (64, 0, 40)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        }
+
+        def Camera "RoofSupportCamera" (
+            customData = {
+                string harness_role = "failure_zone_research_camera"
+                string harness_failure_zone = "/World/FailureZones/RoofSupportZone"
+                string harness_purpose = "records rover contact, displaced support, and beam fall"
+            }
+        )
+        {
+            float focalLength = 38
+            float horizontalAperture = 36
+            float verticalAperture = 20.25
+            float2 clippingRange = (0.1, 10000)
+            float fStop = 0
+            double3 xformOp:translate = (21.0, -9.2, 5.6)
+            float3 xformOp:rotateXYZ = (67, 0, 58)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        }
+
+        def Camera "RockfallCamera" (
+            customData = {
+                string harness_role = "failure_zone_research_camera"
+                string harness_failure_zone = "/World/FailureZones/RockfallZone"
+                string harness_purpose = "records rover-retainer contact and falling rocks"
+            }
+        )
+        {
+            float focalLength = 38
+            float horizontalAperture = 36
+            float verticalAperture = 20.25
+            float2 clippingRange = (0.1, 10000)
+            float fStop = 0
+            double3 xformOp:translate = (31.0, -7.5, 5.8)
+            float3 xformOp:rotateXYZ = (68, 0, 55)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        }
+
+        def Camera "DebrisCamera" (
+            customData = {
+                string harness_role = "failure_zone_research_camera"
+                string harness_failure_zone = "/World/FailureZones/DebrisCascadeZone"
+                string harness_purpose = "records rover nudge and compact debris cascade"
+            }
+        )
+        {
+            float focalLength = 35
+            float horizontalAperture = 36
+            float verticalAperture = 20.25
+            float2 clippingRange = (0.1, 10000)
+            float fStop = 0
+            double3 xformOp:translate = (41.0, -8.0, 5.4)
+            float3 xformOp:rotateXYZ = (66, 0, 55)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        }
+    }
+}

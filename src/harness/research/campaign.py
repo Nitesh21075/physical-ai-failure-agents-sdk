@@ -218,10 +218,94 @@ class ResearchCampaignStore:
             self._event(connection, iteration["campaign_id"], "isaac_completed", {"iteration_id": iteration_id, "run_id": run_id})
             connection.commit()
 
+    def record_plan_c_pair(self, campaign_id: str, isaac_run_id: str, pair_id: str) -> str:
+        """Attach a prepared/finalized pair to the campaign iteration that owns its Isaac run."""
+        with closing(self._connect()) as connection:
+            iteration = connection.execute(
+                "SELECT iteration_id, plan_c_pair_id FROM research_iterations "
+                "WHERE campaign_id = ? AND isaac_run_id = ? ORDER BY ordinal DESC LIMIT 1",
+                (campaign_id, isaac_run_id),
+            ).fetchone()
+            if iteration is None:
+                raise KeyError("the Isaac run does not belong to this campaign")
+            if iteration["plan_c_pair_id"] and iteration["plan_c_pair_id"] != pair_id:
+                raise ValueError("the campaign iteration already has a different Plan C pair")
+            connection.execute(
+                "UPDATE research_iterations SET plan_c_pair_id = ?, state = ?, updated_at = CURRENT_TIMESTAMP "
+                "WHERE iteration_id = ?",
+                (pair_id, IterationState.WAITING_FOR_ASSESSMENT, iteration["iteration_id"]),
+            )
+            self._event(
+                connection,
+                campaign_id,
+                "reactor_pair_prepared",
+                {"iteration_id": iteration["iteration_id"], "run_id": isaac_run_id, "pair_id": pair_id},
+            )
+            connection.commit()
+        return iteration["iteration_id"]
+
+    def record_pair_comparison(
+        self,
+        campaign_id: str,
+        pair_id: str,
+        reactor_run_id: str,
+        comparison_status: str,
+    ) -> None:
+        """Persist the completed Reactor/Plan C linkage without changing Isaac evidence."""
+        with closing(self._connect()) as connection:
+            iteration = connection.execute(
+                "SELECT iteration_id FROM research_iterations WHERE campaign_id = ? AND plan_c_pair_id = ?",
+                (campaign_id, pair_id),
+            ).fetchone()
+            if iteration is None:
+                raise KeyError("the pair does not belong to this campaign")
+            connection.execute(
+                "UPDATE research_iterations SET reactor_run_id = ?, comparison_status = ?, state = ?, "
+                "updated_at = CURRENT_TIMESTAMP WHERE iteration_id = ?",
+                (
+                    reactor_run_id,
+                    comparison_status,
+                    IterationState.RECORDED,
+                    iteration["iteration_id"],
+                ),
+            )
+            self._event(
+                connection,
+                campaign_id,
+                "plan_c_comparison_recorded",
+                {
+                    "iteration_id": iteration["iteration_id"],
+                    "pair_id": pair_id,
+                    "reactor_run_id": reactor_run_id,
+                    "comparison_status": comparison_status,
+                },
+            )
+            connection.commit()
+
     def list_events(self, campaign_id: str) -> list[dict]:
         with closing(self._connect()) as connection:
-            rows = connection.execute("SELECT * FROM campaign_events WHERE campaign_id = ? ORDER BY created_at, event_id", (campaign_id,)).fetchall()
+            rows = connection.execute(
+                "SELECT * FROM campaign_events WHERE campaign_id = ? ORDER BY rowid",
+                (campaign_id,),
+            ).fetchall()
         return [{**dict(row), "payload": json.loads(row["payload_json"])} for row in rows]
+
+    def record_event(self, campaign_id: str, event_type: str, payload: dict | None = None) -> str:
+        """Append an observable workflow event without storing model reasoning."""
+        if not event_type.strip():
+            raise ValueError("event_type must not be empty")
+        event_id = str(uuid4())
+        with closing(self._connect()) as connection:
+            if connection.execute(
+                "SELECT 1 FROM research_campaigns WHERE campaign_id = ?", (campaign_id,)
+            ).fetchone() is None:
+                raise KeyError(f"unknown campaign: {campaign_id}")
+            connection.execute(
+                "INSERT INTO campaign_events(event_id, campaign_id, event_type, payload_json) VALUES (?, ?, ?, ?)",
+                (event_id, campaign_id, event_type.strip(), json.dumps(payload or {}, sort_keys=True)),
+            )
+            connection.commit()
+        return event_id
 
     def has_equivalent_proposal(self, campaign_id: str, proposal: dict, *, exclude_iteration_id: str | None = None) -> bool:
         signature = json.dumps(

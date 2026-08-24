@@ -1,0 +1,65 @@
+#usda 1.0
+(
+    defaultPrim = "Robot"
+)
+
+def Xform "Robot" (
+    prepend variantSets = "robot_model"
+    customData = {
+        string harness_role = "nvidia_nova_carter_rover"
+        string harness_control_contract = "articulated wheeled rover; future worker/VLA must use its wheel articulation rather than teleporting the chassis"
+        string harness_asset_source = "NVIDIA Isaac Sim 6.0 asset root"
+        string harness_sensor_contract = "VLACamera is a stable RGB camera prim; the referenced Nova Carter asset also includes its own simulated sensor suite"
+    }
+    variants = {
+        string robot_model = "proxy_fallback"
+    }
+)
+{
+    double3 xformOp:translate = (-6, -1, 0.15)
+    uniform token[] xformOpOrder = ["xformOp:translate"]
+
+    variantSet "robot_model" = {
+        "nvidia_nova_carter" (
+            references = @https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0/Isaac/Robots/NVIDIA/NovaCarter/nova_carter.usd@
+        )
+        {
+        }
+        "proxy_fallback" {
+            def Xform "FallbackProxy" (
+                prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+            )
+            {
+                bool physics:rigidBodyEnabled = true
+                float physics:mass = 55
+                def Cube "CollisionAndVisual" (
+                    prepend apiSchemas = ["PhysicsCollisionAPI"]
+                )
+                {
+                    float3 xformOp:scale = (0.62, 0.42, 0.30)
+                    uniform token[] xformOpOrder = ["xformOp:scale"]
+                    bool physics:collisionEnabled = true
+                    rel material:binding = </World/Looks/RobotBlue>
+                    rel material:binding:physics = </World/PhysicsMaterials/RoughConcrete>
+                }
+            }
+        }
+    }
+
+    def Camera "VLACamera" (
+        customData = {
+            string harness_role = "rover_egocentric_rgb_camera"
+            string harness_consumer = "future_vla_or_visual_policy"
+            string harness_capture_contract = "attach an Isaac camera wrapper to this prim; fixed path remains stable across robot variants"
+        }
+    )
+    {
+        float focalLength = 24
+        float horizontalAperture = 20.955
+        float verticalAperture = 15.2908
+        float2 clippingRange = (0.05, 100)
+        double3 xformOp:translate = (0.35, 0, 0.38)
+        float3 xformOp:rotateXYZ = (0, -90, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+    }
+}

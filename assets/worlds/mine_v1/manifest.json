@@ -1,0 +1,141 @@
+{
+  "world_id": "mine_v1",
+  "entry_stage": "mine_world.usda",
+  "description": "Persistent composed OpenUSD underground mine/drift for physical-AI failure research.",
+  "composition": {
+    "base_layer": "mine_base.usda",
+    "sublayers": ["layers/physics_defaults.usda", "layers/materials.usda", "layers/lighting.usda"],
+    "referenced_assets": ["sections/extended_drift.usda", "hazards/roof_support.usda", "hazards/loose_rock.usda", "hazards/debris_pile.usda", "hazards/roof_support_zone.usda", "hazards/rockfall_zone.usda", "hazards/debris_cascade_zone.usda", "robots/inspection_robot.usda"],
+    "references_are_relative": false,
+    "external_assets": [
+      {
+        "prim": "/World/Robot",
+        "asset": "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0/Isaac/Robots/NVIDIA/NovaCarter/nova_carter.usd",
+        "provider": "NVIDIA Isaac Sim 6.0 asset root",
+        "license": "3D Content Sharing Agreement",
+        "fallback_variant": "proxy_fallback"
+      }
+    ]
+  },
+  "interactive_prims": {
+    "roof_beam": "/World/FailureZones/Zone_RoofSupport/BeamPrimary",
+    "roof_support": "/World/FailureZones/Zone_RoofSupport/SupportPrimary",
+    "roof_interaction_target": "/World/FailureZones/Zone_RoofSupport/InteractionTarget",
+    "roof_push_face": "/World/FailureZones/Zone_RoofSupport/SupportPrimary/PushFace",
+    "rock_01": "/World/FailureZones/Zone_Rockfall/Rock01",
+    "rock_02": "/World/FailureZones/Zone_Rockfall/Rock02",
+    "rock_retainer": "/World/FailureZones/Zone_Rockfall/RetainingObject",
+    "rock_retainer_push_face": "/World/FailureZones/Zone_Rockfall/RetainingObject/PushFace",
+    "debris_01": "/World/FailureZones/Zone_Debris/Debris01",
+    "debris_02": "/World/FailureZones/Zone_Debris/Debris02",
+    "debris_interaction_target": "/World/FailureZones/Zone_Debris/InteractionTarget",
+    "robot": "/World/Robot"
+  },
+  "cameras": {
+    "research": "/World/Sensors/ResearchCamera",
+    "overview": "/World/Sensors/OverviewCamera",
+    "rover_vla": "/World/Robot/VLACamera",
+    "roof_support_zone": "/World/Sensors/RoofSupportCamera",
+    "rockfall_zone": "/World/Sensors/RockfallCamera",
+    "debris_cascade_zone": "/World/Sensors/DebrisCamera"
+  },
+  "previews": {
+    "research": "previews/research_camera.png",
+    "overview": "previews/overview_camera.png",
+    "status": "temporary_composition_previews_pending_isaac_rtx_render"
+  },
+  "hazard_zones": {
+    "roof_support": {
+      "root": "/World/FailureZones/Zone_RoofSupport",
+      "physical_status": "operational",
+      "mechanism": "A rover can physically push SupportPrimary/PushFace in positive Y. The dynamic beam rests on the separate support, so removed contact lets gravity drop it."
+    },
+    "rockfall": {
+      "root": "/World/FailureZones/Zone_Rockfall",
+      "physical_status": "rover_interaction_authored_pending_physx_smoke",
+      "mechanism": "A rover can push the dynamic RetainingObject/PushFace in positive Y, clearing the sloped ledge route for two dynamic loose rocks."
+    },
+    "debris": {
+      "root": "/World/FailureZones/Zone_Debris",
+      "physical_status": "staged",
+      "mechanism": "Two dynamic debris blocks visibly obstruct the drift."
+    }
+  },
+  "failure_zones": {
+    "roof_support": {
+      "root": "/World/FailureZones/RoofSupportZone",
+      "beam": "/World/FailureZones/RoofSupportZone/BeamPrimary",
+      "support": "/World/FailureZones/RoofSupportZone/SupportPrimary",
+      "support_secondary": "/World/FailureZones/RoofSupportZone/SupportSecondary",
+      "interaction_target": "/World/FailureZones/RoofSupportZone/InteractionTarget",
+      "inspection_marker": "/World/FailureZones/RoofSupportZone/InspectionMarker",
+      "camera": "/World/Sensors/RoofSupportCamera",
+      "experiment_start_pose": {
+        "position_xyz_m": [24.0, -1.65, 0.35],
+        "heading": "+Y",
+        "orientation_quaternion_wxyz": [0.70710678, 0.0, 0.0, 0.70710678]
+      },
+      "physics_status": "physics-authored; target-workstation contact smoke must pass before using as a campaign baseline",
+      "causal_chain": "Rover drives into SupportPrimary/PushFace -> dynamic low-friction support translates laterally -> BeamPrimary loses its only collision support -> PhysX gravity/contact determines its fall.",
+      "parameters": {
+        "support_offset": "/World/FailureZones/RoofSupportZone/SupportPrimary.xformOp:translate",
+        "support_rotation": "/World/FailureZones/RoofSupportZone/SupportPrimary.xformOp:rotateXYZ",
+        "support_friction": "/World/FailureZones/RoofSupportZone/SupportPrimary material:binding:physics",
+        "support_mass": "/World/FailureZones/RoofSupportZone/SupportPrimary.physics:mass",
+        "beam_mass": "/World/FailureZones/RoofSupportZone/BeamPrimary.physics:mass",
+        "beam_initial_pose": "/World/FailureZones/RoofSupportZone/BeamPrimary.xformOp:translate",
+        "rover_start_pose": "/World/Robot.xformOp:translate",
+        "target_pose": "/World/FailureZones/RoofSupportZone/InteractionTarget.xformOp:translate"
+      }
+    },
+    "rockfall": {
+      "root": "/World/FailureZones/RockfallZone",
+      "rock": "/World/FailureZones/RockfallZone/Rock01",
+      "rock_secondary": "/World/FailureZones/RockfallZone/Rock02",
+      "retaining_block": "/World/FailureZones/RockfallZone/RetainingBlock",
+      "interaction_target": "/World/FailureZones/RockfallZone/InteractionTarget",
+      "inspection_marker": "/World/FailureZones/RockfallZone/InspectionMarker",
+      "camera": "/World/Sensors/RockfallCamera",
+      "physics_status": "authored; dedicated rover recording pending",
+      "parameters": {
+        "rock_start_pose": "/World/FailureZones/RockfallZone/Rock01.xformOp:translate",
+        "retaining_block_pose": "/World/FailureZones/RockfallZone/RetainingBlock.xformOp:translate",
+        "slope_angle": "/World/FailureZones/RockfallZone/Ledge.xformOp:rotateY",
+        "rock_mass": "/World/FailureZones/RockfallZone/Rock01.physics:mass",
+        "friction": "/World/FailureZones/RockfallZone/Rock01 material:binding:physics",
+        "rover_start_pose": "/World/Robot.xformOp:translate"
+      }
+    },
+    "debris_cascade": {
+      "root": "/World/FailureZones/DebrisCascadeZone",
+      "debris": ["/World/FailureZones/DebrisCascadeZone/Debris01", "/World/FailureZones/DebrisCascadeZone/Debris02", "/World/FailureZones/DebrisCascadeZone/Debris03"],
+      "interaction_target": "/World/FailureZones/DebrisCascadeZone/InteractionTarget",
+      "camera": "/World/Sensors/DebrisCamera",
+      "physics_status": "authored; compact three-body cascade pending dedicated rover recording"
+    }
+  },
+  "rover_interactions": {
+    "control_contract": "Default robot is NVIDIA Nova Carter, an articulated wheeled rover. Future VLA/controller code must command wheel articulation; it must not teleport the chassis or call a collapse action.",
+    "roof_support_push": {
+      "approach": "Navigate the rover to the negative-Y side of SupportPrimary, then drive in positive Y into roof_push_face using ordinary chassis contact.",
+      "success_signal": "SupportPrimary has translated sufficiently in positive Y and BeamPrimary loses support contact."
+    },
+    "rockfall_release": {
+      "approach": "Navigate to the negative-Y side of RetainingObject, then drive in positive Y into rock_retainer_push_face.",
+      "success_signal": "RetainingObject clears the ledge route and the loose rocks may roll under gravity."
+    },
+    "debris_clearance": {
+      "approach": "Drive into either debris rigid body using the rover chassis; there is no special trigger.",
+      "success_signal": "Debris changes pose or clears the intended travel corridor."
+    }
+  },
+  "safe_override_operations": [
+    "Move or set kinematic state of SupportPrimary in a stronger experiment/session layer.",
+    "Adjust mass, friction/contact material, and rigid-body attributes of listed interactive prims.",
+    "Move RetainingObject or perturb Rock01/Rock02 in an experiment layer.",
+    "Move/reorient /World/Robot or replace only its reference with a compatible robot asset.",
+    "Adjust the named failure-zone transforms, masses, and physics material bindings listed in failure_zones using a stronger session/experiment layer.",
+    "Add approved experiment objects under /World/FailureZones or a dedicated experiment scope."
+  ],
+  "immutable_base_policy": "Do not write experiments back into mine_world.usda or its component asset layers; compose stronger override/session layers."
+}

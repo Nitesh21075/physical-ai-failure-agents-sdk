@@ -1,0 +1,107 @@
+#usda 1.0
+(
+    defaultPrim = "MineExtension"
+)
+
+def Xform "MineExtension"
+{
+    # This overlaps the original drift by one metre, making it a continuous
+    # physical route rather than a disconnected demonstration set.
+    def Cube "ExtensionFloor" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+    )
+    {
+        double3 xformOp:translate = (34, 0, -0.25)
+        float3 xformOp:scale = (16, 4, 0.25)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        bool physics:collisionEnabled = true
+        rel material:binding = </World/Looks/Concrete>
+        rel material:binding:physics = </World/PhysicsMaterials/RoughConcrete>
+    }
+
+    def Cube "ExtensionCeiling" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+    )
+    {
+        double3 xformOp:translate = (34, 0, 4.25)
+        float3 xformOp:scale = (16, 4.2, 0.25)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        bool physics:collisionEnabled = true
+        rel material:binding = </World/Looks/Rock>
+    }
+
+    def Cube "ExtensionWallLeft" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+    )
+    {
+        double3 xformOp:translate = (34, 4.15, 2)
+        float3 xformOp:scale = (16, 0.25, 2.25)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        bool physics:collisionEnabled = true
+        rel material:binding = </World/Looks/Rock>
+    }
+
+    def Cube "ExtensionWallRight" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+    )
+    {
+        double3 xformOp:translate = (34, -4.15, 2)
+        float3 xformOp:scale = (16, 0.25, 2.25)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        bool physics:collisionEnabled = true
+        rel material:binding = </World/Looks/Rock>
+    }
+
+    def Xform "ExtensionProps"
+    {
+        def Cube "Rib07"
+        {
+            double3 xformOp:translate = (20, -3.72, 2.1)
+            float3 xformOp:scale = (0.12, 0.12, 2.05)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            rel material:binding = </World/Looks/Steel>
+        }
+        def Cube "Rib08"
+        {
+            double3 xformOp:translate = (20, 3.72, 2.1)
+            float3 xformOp:scale = (0.12, 0.12, 2.05)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            rel material:binding = </World/Looks/Steel>
+        }
+        def Cube "Rib09"
+        {
+            double3 xformOp:translate = (30, -3.72, 2.1)
+            float3 xformOp:scale = (0.12, 0.12, 2.05)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            rel material:binding = </World/Looks/Steel>
+        }
+        def Cube "Rib10"
+        {
+            double3 xformOp:translate = (30, 3.72, 2.1)
+            float3 xformOp:scale = (0.12, 0.12, 2.05)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            rel material:binding = </World/Looks/Steel>
+        }
+        def Cube "Rib11"
+        {
+            double3 xformOp:translate = (40, -3.72, 2.1)
+            float3 xformOp:scale = (0.12, 0.12, 2.05)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            rel material:binding = </World/Looks/Steel>
+        }
+        def Cube "Rib12"
+        {
+            double3 xformOp:translate = (40, 3.72, 2.1)
+            float3 xformOp:scale = (0.12, 0.12, 2.05)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            rel material:binding = </World/Looks/Steel>
+        }
+        def Cube "WarningRouteStripe"
+        {
+            double3 xformOp:translate = (34, -3.86, 1.1)
+            float3 xformOp:scale = (15.5, 0.02, 0.18)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            rel material:binding = </World/Looks/SafetyYellow>
+        }
+    }
+}

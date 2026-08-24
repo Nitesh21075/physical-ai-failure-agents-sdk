@@ -1,0 +1,163 @@
+#usda 1.0
+(
+    defaultPrim = "RockfallZone"
+)
+
+def Xform "RockfallZone" (
+    customData = {
+        string harness_hazard_type = "rover_released_ledge_rockfall"
+        string harness_physical_mechanism = "Two dynamic rocks rest on a tilted ledge behind a separate dynamic RetainingBlock. Moving the block from the downhill edge removes the contact restraint; gravity and contact determine the rock trajectories."
+        string harness_status = "physics_authored_pending_dedicated_physx_recording"
+        string harness_parameterization = "Override Rock01/Rock02 xformOp:translate and physics:mass; RetainingBlock xformOp:translate and physics:mass; Ledge xformOp:rotateY; physics material bindings; /World/Robot pose."
+    }
+)
+{
+    def Cube "Ledge" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+        customData = {
+            string harness_role = "static_rockfall_slope"
+            float harness_slope_angle_degrees = -10
+        }
+    )
+    {
+        double3 xformOp:translate = (35, 2.25, 1.22)
+        float xformOp:rotateY = -10
+        float3 xformOp:scale = (1.75, 1.30, 0.12)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateY", "xformOp:scale"]
+        bool physics:collisionEnabled = true
+        rel material:binding = </World/Looks/Rock>
+        rel material:binding:physics = </World/PhysicsMaterials/LooseRockContact>
+    }
+
+    def Xform "Rock01" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+        customData = {
+            string harness_role = "primary_loose_rock"
+            double3 harness_rock_start_pose = (34.25, 2.25, 1.78)
+            float harness_rock_mass_kg = 20
+        }
+    )
+    {
+        double3 xformOp:translate = (34.25, 2.25, 1.78)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        bool physics:rigidBodyEnabled = true
+        bool physics:kinematicEnabled = false
+        float physics:mass = 20
+        def Sphere "CollisionAndVisual" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            float radius = 0.44
+            bool physics:collisionEnabled = true
+            rel material:binding = </World/Looks/Rock>
+            rel material:binding:physics = </World/PhysicsMaterials/LooseRockContact>
+        }
+    }
+
+    def Xform "Rock02" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+        customData = {
+            string harness_role = "secondary_loose_rock"
+            double3 harness_rock_start_pose = (35.05, 2.25, 1.63)
+            float harness_rock_mass_kg = 12
+        }
+    )
+    {
+        double3 xformOp:translate = (35.05, 2.25, 1.63)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        bool physics:rigidBodyEnabled = true
+        bool physics:kinematicEnabled = false
+        float physics:mass = 12
+        def Sphere "CollisionAndVisual" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            float radius = 0.31
+            bool physics:collisionEnabled = true
+            rel material:binding = </World/Looks/Rock>
+            rel material:binding:physics = </World/PhysicsMaterials/LooseRockContact>
+        }
+    }
+
+    def Xform "RetainingBlock" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+        customData = {
+            string harness_role = "rover_movable_downhill_rock_retainer"
+            string harness_rover_contact = "approach InteractionTarget from low X and drive positive X into PushFace"
+            double3 harness_retaining_block_pose = (36.60, 2.25, 1.35)
+            float harness_retaining_block_mass_kg = 10
+        }
+    )
+    {
+        double3 xformOp:translate = (36.60, 2.25, 1.35)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        bool physics:rigidBodyEnabled = true
+        bool physics:kinematicEnabled = false
+        float physics:mass = 10
+        def Cube "CollisionAndVisual" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            float3 xformOp:scale = (0.14, 0.75, 0.70)
+            uniform token[] xformOpOrder = ["xformOp:scale"]
+            bool physics:collisionEnabled = true
+            rel material:binding = </World/Looks/Steel>
+            rel material:binding:physics = </World/PhysicsMaterials/UnstableSupportContact>
+        }
+        def Cube "PushFace" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+            customData = {
+                string harness_role = "rover_contact_surface"
+                string harness_push_direction = "+X"
+                string harness_effect = "clears the downhill edge restraint for Rock01 and Rock02"
+            }
+        )
+        {
+            double3 xformOp:translate = (-0.32, 0, -0.45)
+            float3 xformOp:scale = (0.12, 0.72, 0.22)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            bool physics:collisionEnabled = true
+            rel material:binding = </World/Looks/SafetyYellow>
+            rel material:binding:physics = </World/PhysicsMaterials/UnstableSupportContact>
+        }
+    }
+
+    def Xform "InteractionTarget" (
+        customData = {
+            string harness_role = "rockfall_rover_approach_target"
+            double3 harness_target_pose = (35.60, 2.25, 0.05)
+            string harness_expected_heading = "+X"
+        }
+    )
+    {
+        double3 xformOp:translate = (35.60, 2.25, 0.05)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        def Cylinder "Marker"
+        {
+            float radius = 0.20
+            float height = 0.10
+            double3 xformOp:translate = (0, 0, 0.05)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+            rel material:binding = </World/Looks/LampGlow>
+        }
+    }
+
+    def Xform "InspectionMarker" (
+        customData = {
+            string harness_role = "deterministic_rover_inspection_marker"
+            double3 harness_target_pose = (33.6, 1.10, 0.05)
+        }
+    )
+    {
+        double3 xformOp:translate = (33.6, 1.10, 0.05)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        def Cylinder "Marker"
+        {
+            float radius = 0.16
+            float height = 0.08
+            double3 xformOp:translate = (0, 0, 0.04)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+            rel material:binding = </World/Looks/SafetyYellow>
+        }
+    }
+}

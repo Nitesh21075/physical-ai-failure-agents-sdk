@@ -146,9 +146,12 @@ class PairedCaptureService:
 
 def _record_from_store(payload: dict) -> ExperimentRecord:
     evaluation = payload["evaluation"]
+    trajectory_ref = payload.get("trajectory_path") or payload.get("trajectory_ref")
+    if not trajectory_ref:
+        raise PairingError("experiment record has no trajectory reference")
     return ExperimentRecord(
         payload["run_id"], Scenario.from_dict(payload["scenario"]), payload["backend"],
-        payload["trajectory_path"], EvaluationResult(
+        trajectory_ref, EvaluationResult(
             evaluation["task_success"], evaluation["environmental_failure"], evaluation.get("failure_type"),
             Severity(evaluation["severity"]), terminal=evaluation.get("terminal", False),
             evidence_refs=tuple(evaluation.get("evidence_refs", ())),
