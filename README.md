@@ -55,6 +55,9 @@ Docker, or Codex tool exposed to the model.
 
 Read [docs/AGENTS_SDK_RUNTIME.md](docs/AGENTS_SDK_RUNTIME.md) for the exact
 call graph, full agent instructions, tool surface, persistence model, verified
-test evidence, and currently unresolved acceptance boundaries. Read
+test evidence, and acceptance boundaries. The latest real browser/Isaac/agent
+run is documented in
+[runs/e2e-agents-sdk/20260824T090809Z/E2E_REPORT.md](runs/e2e-agents-sdk/20260824T090809Z/E2E_REPORT.md).
+Read
 [docs/MINE_ROVER_EXPERIMENT.md](docs/MINE_ROVER_EXPERIMENT.md) for the physical
 world and experiment details.

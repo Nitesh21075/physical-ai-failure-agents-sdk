@@ -1,0 +1,14 @@
+{"trace_id":"trace_d7cfc61c074a4232be483dc16540842b","event_type":"agent_run_started"}
+{"trace_id":"trace_d7cfc61c074a4232be483dc16540842b","event_type":"tool_started","tool_name":"get_recent_experiments","tool_call_id":"call_eet3isTEBc48aHPzLLo1f45L"}
+{"trace_id":"trace_d7cfc61c074a4232be483dc16540842b","event_type":"tool_started","tool_name":"inspect_mine_world","tool_call_id":"call_5gof5a7OZANLd0Qslq61wTLQ"}
+{"trace_id":"trace_d7cfc61c074a4232be483dc16540842b","event_type":"tool_started","tool_name":"run_mine_roof_support_experiment","tool_call_id":"call_JV6lrCwjSMrRQEDdESCJsZNY"}
+{"trace_id":"trace_d7cfc61c074a4232be483dc16540842b","event_type":"tool_finished","tool_name":"run_mine_roof_support_experiment","tool_call_id":"call_JV6lrCwjSMrRQEDdESCJsZNY","isaac_run_id":"d1d7716a-a6ba-4ffc-83f2-1658bd39ecaa"}
+{"trace_id":"trace_d7cfc61c074a4232be483dc16540842b","event_type":"tool_started","tool_name":"prepare_reactor_comparison","tool_call_id":"call_j0Vs0mjbAku7zCdTAEsSA4N3"}
+{"trace_id":"trace_d7cfc61c074a4232be483dc16540842b","event_type":"tool_finished","tool_name":"prepare_reactor_comparison","tool_call_id":"call_j0Vs0mjbAku7zCdTAEsSA4N3","pair_id":"b67ac8dd-62b5-4ba5-a532-16c913bc0ca3"}
+{"trace_id":"trace_d7cfc61c074a4232be483dc16540842b","event_type":"agent_run_finished"}
+{"trace_id":"trace_15363940233b4d57b0fb2b860e50e57d","event_type":"agent_run_started"}
+{"trace_id":"trace_15363940233b4d57b0fb2b860e50e57d","event_type":"tool_started","tool_name":"get_pair_status","tool_call_id":"call_ubH8FJ3hMz2g5wJ4wXps2FBn"}
+{"trace_id":"trace_15363940233b4d57b0fb2b860e50e57d","event_type":"tool_finished","tool_name":"get_pair_status","tool_call_id":"call_ubH8FJ3hMz2g5wJ4wXps2FBn","pair_id":"b67ac8dd-62b5-4ba5-a532-16c913bc0ca3"}
+{"trace_id":"trace_15363940233b4d57b0fb2b860e50e57d","event_type":"tool_started","tool_name":"assess_and_compare_pair","tool_call_id":"call_uVDFWCxW0BJxjnzgy3gzO7GC"}
+{"trace_id":"trace_15363940233b4d57b0fb2b860e50e57d","event_type":"tool_finished","tool_name":"assess_and_compare_pair","tool_call_id":"call_uVDFWCxW0BJxjnzgy3gzO7GC","pair_id":"b67ac8dd-62b5-4ba5-a532-16c913bc0ca3","comparison_status":"inconclusive"}
+{"trace_id":"trace_15363940233b4d57b0fb2b860e50e57d","event_type":"agent_run_finished"}

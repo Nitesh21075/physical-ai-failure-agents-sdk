@@ -1,0 +1,10 @@
+{
+  "campaign_id": "26d90a6c-f2d3-41f6-9a45-73798fe38c4c",
+  "session_id": "26d90a6c-f2d3-41f6-9a45-73798fe38c4c",
+  "isaac_run_id": "d1d7716a-a6ba-4ffc-83f2-1658bd39ecaa",
+  "pair_id": "b67ac8dd-62b5-4ba5-a532-16c913bc0ca3",
+  "reactor_run_id": "3066ccb8-7019-4b31-b505-c9dada522729",
+  "initial_trace_id": "trace_d7cfc61c074a4232be483dc16540842b",
+  "resume_trace_id": "trace_15363940233b4d57b0fb2b860e50e57d",
+  "status_trace_id": "trace_a1f8985e03a543a8bce82736a88e2d86"
+}

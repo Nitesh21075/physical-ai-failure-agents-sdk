@@ -209,6 +209,10 @@ large trajectories, frames, and videos stay as filesystem artifacts.
 tool lifecycle events, completion/failure, call IDs, timestamps, trace ID, and
 compact results in `campaign_events`. It never stores hidden reasoning. Agents
 SDK tracing uses workflow `Physical AI Failure Research` and campaign grouping.
+The CLI prints only lifecycle and tool names while a step is running, so a long
+Isaac call is visible without exposing model reasoning or large tool payloads.
+Completed runs also persist an `agent_run_usage` event with SDK request and
+token counts.
 
 ## Validation status
 
@@ -225,16 +229,23 @@ Post-cleanup evidence collected on 2026-08-24:
 | Real Isaac recording | PASS | 21 real 320×180 PNG frames; first/last hashes differ; replay MP4 is 11,349 bytes and decodes successfully |
 | Dashboard process/routes | PASS | Real Uvicorn process; `/agent`, agent campaign API, and `/reactor?pair_id=…` returned 200 |
 | Ordinary process/session resume | PASS | A new CLI process reused campaign/session `8909f753-fcd5-49d8-a48c-335fa58516c8` and correctly recovered the earlier world conclusion and prior evidence |
-| Real Reactor pair | NOT ACCEPTED | The permitted source `.env` has no `REACTOR_API_KEY`; no browser/WebRTC media was fabricated |
-| Resume after a completed Reactor capture | NOT ACCEPTED | The loading/finalization/comparison code exists, but there is no completed real Reactor capture to resume from |
-| Second evidence-driven research iteration | SKIPPED | It depends on the uncompleted Reactor comparison; no substitute run was claimed as this acceptance test |
+| Real Reactor pair | PASS | Campaign `26d90a6c-f2d3-41f6-9a45-73798fe38c4c`; pair `b67ac8dd-62b5-4ba5-a532-16c913bc0ca3`; real browser/WebRTC run `3066ccb8-7019-4b31-b505-c9dada522729`; 2,432,837-byte WebM decodes at 1664×960 |
+| Resume after a completed Reactor capture | PASS | A new CLI process reused the same campaign/SQLite session; trace `trace_15363940233b4d57b0fb2b860e50e57d` shows `get_pair_status` then `assess_and_compare_pair`; result was honestly `inconclusive`/`needs_human_review` |
+| Second evidence-driven research iteration | SKIPPED | The cost-bounded E2E campaign authorized exactly one experiment. The resumed agent proposed a different 600-step experiment based on the evidence, but the exhausted budget correctly prevented execution |
 | Negative tool boundaries | PASS | Direct validation rejects speeds outside 0.1–0.8 before Docker; a second budget claim is rejected; only seven tools exist; a real malicious-shell prompt returned `blocked` after campaign inspection and had no shell to call |
 
-The browser handoff implementation was repaired during cleanup: an
-agent-prepared pair now opens as `/reactor?pair_id=<id>`, the client fetches the
-existing prepared record and seed, and finalizes that same pair. This is covered
-by regression/API tests but remains live-unaccepted until a real Reactor key and
-browser capture are available.
+The completed live E2E exposed and fixed two browser timing defects: the page
+now waits until the Reactor SDK reports transport status `ready` before upload,
+then waits for `conditions_ready` before generation. It also exposed a stale
+Plan C assumption that confused the world identifier (`mine_v1`) with the
+executor backend (`isaac_sim`); those are now validated at their correct schema
+boundaries. The accepted run and encountered failures are recorded in
+[`runs/e2e-agents-sdk/20260824T090809Z/E2E_REPORT.md`](../runs/e2e-agents-sdk/20260824T090809Z/E2E_REPORT.md).
+
+The pipeline completed, but its scientific comparison remains inconclusive:
+the mine seed is extremely dark and the short Reactor future did not expose a
+confidently assessable structural event. That is an evidence-quality limitation,
+not a transport, persistence, session, or agent-loop failure.
 
 Repository provenance: the untouched fallback checkout remains at
 `/home/ubuntu/physical-ai-failure-project`, SHA

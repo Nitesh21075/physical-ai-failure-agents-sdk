@@ -10,6 +10,8 @@ const message = (text, isError = false) => {
   target.style.color = isError ? "var(--red)" : "var(--green)";
 };
 const state = { model: null, connected: false, started: false, pair: null, recorder: null, recordingChunks: [] };
+const REACTOR_READY_TIMEOUT_MS = 120000;
+const REACTOR_CONDITIONS_TIMEOUT_MS = 60000;
 
 function setEnabled() {
   $("#start-reactor").disabled = !state.connected;
@@ -50,8 +52,10 @@ async function savePairedRecording() {
     const response = await fetch(`/api/pair-captures/${encodeURIComponent(pair.pair_id)}/recording`, {
       method: "POST", headers: { "Content-Type": blob.type }, body: blob,
     });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.detail || "Unable to save paired recording.");
+    const responseBody = await response.text();
+    let result = {};
+    try { result = responseBody ? JSON.parse(responseBody) : {}; } catch { result = { detail: responseBody }; }
+    if (!response.ok) throw new Error(result.detail || `Unable to save paired recording (HTTP ${response.status}).`);
     message("Paired recording saved. Opening comparison…");
     state.pair = null;
     location.assign(result.comparison_url);
@@ -75,7 +79,36 @@ async function token() {
 
 function event(name, callback) {
   const method = `on${name}`;
-  if (typeof state.model?.[method] === "function") state.model[method](callback);
+  if (typeof state.model?.[method] === "function") return state.model[method](callback);
+  return undefined;
+}
+
+function waitForEvent(name, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let unsubscribe;
+    const timeout = window.setTimeout(() => {
+      if (typeof unsubscribe === "function") unsubscribe();
+      reject(new Error(`Timed out waiting for Reactor ${name}.`));
+    }, timeoutMs);
+    unsubscribe = event(name, (payload) => {
+      window.clearTimeout(timeout);
+      if (typeof unsubscribe === "function") unsubscribe();
+      resolve(payload);
+    });
+  });
+}
+
+async function waitForReactorReady() {
+  const deadline = Date.now() + REACTOR_READY_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const status = state.model?.getStatus?.();
+    if (status === "ready") return;
+    if (status === "disconnected") throw new Error("Reactor disconnected before becoming ready.");
+    $("#reactor-status").textContent = `Connected — ${status || "initializing"}`;
+    message(`Waiting for Reactor capacity (${status || "initializing"})…`);
+    await new Promise((resolve) => window.setTimeout(resolve, 1000));
+  }
+  throw new Error("Timed out waiting for Reactor session capacity.");
 }
 
 function installListeners() {
@@ -125,6 +158,7 @@ async function connect() {
     state.model = new LingbotWorld2Model();
     installListeners();
     await state.model.connect(await token());
+    await waitForReactorReady();
     state.connected = true;
     $("#reactor-status").textContent = "Connected — ready";
     message("Connected. Add a prompt and seed image, then start the world.");
@@ -146,11 +180,15 @@ async function start() {
   try {
     $("#start-reactor").disabled = true;
     message("Uploading image and configuring the world…");
+    await waitForReactorReady();
+    const conditionsReady = waitForEvent("ConditionsReady", REACTOR_CONDITIONS_TIMEOUT_MS);
     await state.model.setSeed({ seed });
     const imageRef = await state.model.uploadFile(image);
     await state.model.setImage({ image: imageRef });
     await state.model.setPrompt({ prompt });
     await state.model.setRotationSpeedDeg({ rotation_speed_deg: Number($("#reactor-speed").value) });
+    await conditionsReady;
+    message("Seed and prompt accepted. Starting world generation…");
     await state.model.start();
   } catch (error) {
     message(error.message || "Unable to start the Reactor world.", true);

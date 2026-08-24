@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -28,13 +29,21 @@ def _summary(value: Any) -> Any:
 
 
 class CampaignRunHooks(RunHooks[AgentRuntimeContext]):
+    def __init__(
+        self, event_callback: Callable[[str, dict[str, Any]], None] | None = None
+    ) -> None:
+        self.event_callback = event_callback
+
     def _record(self, context: Any, event_type: str, payload: dict[str, Any]) -> None:
         local = context.context
+        event_payload = {"timestamp": _now(), "trace_id": local.trace_id, **payload}
         local.campaign_store.record_event(
             local.campaign_id,
             event_type,
-            {"timestamp": _now(), "trace_id": local.trace_id, **payload},
+            event_payload,
         )
+        if self.event_callback is not None:
+            self.event_callback(event_type, event_payload)
 
     async def on_agent_start(self, context: Any, agent: Any) -> None:
         self._record(context, "agent_run_started", {"agent": agent.name})

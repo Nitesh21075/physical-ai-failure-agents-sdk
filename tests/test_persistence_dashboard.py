@@ -85,7 +85,7 @@ def test_paired_capture_persists_browser_video_as_a_plan_c_pair(tmp_path: Path):
     camera.parent.mkdir(parents=True); run_dir.mkdir(parents=True)
     np.save(camera, np.zeros((12, 16, 4), dtype=np.uint8))
     scenario = Scenario(
-        environment="isaac_sim", task="mine_roof_support_interaction", seed=7,
+        environment="mine_v1", task="mine_roof_support_interaction", seed=7,
         parameters={"rover_linear_velocity_mps": 0.25, "control_steps": 180},
         hazards={"zone": "RoofSupportZone", "event": "structural_collapse"},
     )

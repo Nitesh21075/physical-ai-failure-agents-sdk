@@ -106,8 +106,15 @@ class MatchedExperimentSpec:
             raise PlanCConfigurationError("seed must be an integer")
         if not isinstance(self.action_alignment, ActionAlignment):
             object.__setattr__(self, "action_alignment", ActionAlignment(self.action_alignment))
-        if self.isaac_scenario.environment != "isaac_sim":
-            raise PlanCConfigurationError("isaac_scenario.environment must be 'isaac_sim'")
+        # ``Scenario.environment`` identifies the world (for example
+        # ``mine_v1``); ``ExperimentRecord.backend`` identifies the executor.
+        # The matched-record validation below is the authority that requires
+        # Isaac Sim. Reject only a neural world accidentally placed on the
+        # physics side here.
+        if self.isaac_scenario.environment.startswith("reactor/"):
+            raise PlanCConfigurationError(
+                "isaac_scenario.environment must identify a non-Reactor world"
+            )
         if not self.neural_scenario.environment.startswith("reactor/"):
             raise PlanCConfigurationError(
                 "neural_scenario.environment must be a qualified Reactor model"

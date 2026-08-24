@@ -25,6 +25,18 @@ def load_env(path: Path) -> None:
             os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
+def show_progress(event_type: str, payload: dict) -> None:
+    if event_type == "tool_started":
+        detail = f" {payload.get('tool_name', 'tool')}"
+    elif event_type == "tool_finished":
+        detail = f" {payload.get('tool_name', 'tool')} ({payload.get('status', 'finished')})"
+    elif event_type.startswith("llm_"):
+        detail = " model"
+    else:
+        detail = ""
+    print(f"[agent] {event_type}{detail}", file=sys.stderr, flush=True)
+
+
 async def _main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("instruction")
@@ -40,7 +52,7 @@ async def _main() -> None:
     model = args.model or os.environ.get("AGENT_MODEL") or os.environ.get("RESEARCH_MODEL")
     if not model:
         raise SystemExit("set AGENT_MODEL to a model available to this OpenAI account")
-    service = MineFailureResearchService(PROJECT_ROOT, model=model)
+    service = MineFailureResearchService(PROJECT_ROOT, model=model, event_callback=show_progress)
     campaign_id = args.campaign_id or service.create_campaign(
         args.objective, experiment_budget=args.experiment_budget
     )

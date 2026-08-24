@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from agents import RunConfig, Runner, SQLiteSession
 from agents.tracing import gen_trace_id
@@ -18,10 +20,17 @@ from harness.research.campaign import ResearchCampaignStore
 
 
 class MineFailureResearchService:
-    def __init__(self, project_root: str | Path, *, model: str) -> None:
+    def __init__(
+        self,
+        project_root: str | Path,
+        *,
+        model: str,
+        event_callback: Callable[[str, dict[str, Any]], None] | None = None,
+    ) -> None:
         self.config = AgentRuntimeConfig.for_project(project_root)
         self.config.runs_root.mkdir(parents=True, exist_ok=True)
         self.model = model
+        self.event_callback = event_callback
         self.experiment_store = ExperimentStore(self.config.database_path)
         self.campaign_store = ResearchCampaignStore(self.config.database_path)
 
@@ -65,13 +74,25 @@ class MineFailureResearchService:
                 instruction,
                 context=context,
                 session=session,
-                hooks=CampaignRunHooks(),
+                hooks=CampaignRunHooks(self.event_callback),
                 max_turns=self.config.max_turns,
                 run_config=run_config,
             )
             output = result.final_output
             if not isinstance(output, ResearchStepSummary):
                 output = ResearchStepSummary.model_validate(output)
+            usage = result.context_wrapper.usage
+            self.campaign_store.record_event(
+                campaign_id,
+                "agent_run_usage",
+                {
+                    "trace_id": trace_id,
+                    "requests": usage.requests,
+                    "input_tokens": usage.input_tokens,
+                    "output_tokens": usage.output_tokens,
+                    "total_tokens": usage.total_tokens,
+                },
+            )
             self.campaign_store.consume_instructions(campaign_id)
             return output
         except Exception as error:

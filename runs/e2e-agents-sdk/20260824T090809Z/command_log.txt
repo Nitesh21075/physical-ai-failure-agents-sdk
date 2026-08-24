@@ -1,0 +1,15 @@
+Fresh agent campaign (normal CLI):
+.venv/bin/python scripts/run_agents_researcher.py 'Investigate roof-support failure in the mine. Inspect the world and previous evidence first, run one useful physically executable roof-support experiment, and prepare a Reactor comparison using the real Isaac evidence.' --objective 'Investigate whether routine rover motion destabilizes the mine roof support and whether Reactor predicts the same future.' --experiment-budget 1
+
+Dashboard (normal operator entrypoint):
+.venv/bin/python scripts/run_dashboard.py --database runs/experiments.sqlite3 --port 8000
+
+Browser route:
+http://127.0.0.1:8000/reactor?pair_id=b67ac8dd-62b5-4ba5-a532-16c913bc0ca3
+
+Persistent resume (normal CLI, new process):
+.venv/bin/python scripts/run_agents_researcher.py 'Continue the research campaign now that the Reactor recording is complete. Inspect the saved pair, assess and compare the real evidence, and propose the next scientifically useful hypothesis. Do not run another Isaac experiment in this step.' --campaign-id '26d90a6c-f2d3-41f6-9a45-73798fe38c4c'
+
+Regression verification:
+.venv/bin/ruff check src scripts tests
+.venv/bin/pytest -q
