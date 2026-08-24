@@ -12,9 +12,9 @@ async function request(url, options = {}) {
 }
 
 async function loadCampaigns(selectId) {
-  const rows = await request('/api/campaigns');
+  const rows = await request('/api/agent/campaigns');
   campaign.replaceChildren(new Option('Create or select a campaign…', ''));
-  rows.filter(row => row.model_provider === 'openai_agents_sdk').forEach(row => {
+  rows.forEach(row => {
     campaign.append(new Option(`${row.objective.slice(0, 60)} · ${row.status}`, row.campaign_id));
   });
   if (selectId) campaign.value = selectId;
@@ -37,7 +37,7 @@ async function refresh() {
   }
   if (iteration?.plan_c_pair_id) {
     const anchor = document.createElement('a'); anchor.className = 'primary-action';
-    anchor.href = iteration.reactor_run_id ? `/pairs/${encodeURIComponent(iteration.plan_c_pair_id)}` : '/reactor';
+    anchor.href = iteration.reactor_run_id ? `/pairs/${encodeURIComponent(iteration.plan_c_pair_id)}` : `/reactor?pair_id=${encodeURIComponent(iteration.plan_c_pair_id)}`;
     anchor.textContent = iteration.reactor_run_id ? 'Open pair comparison' : 'Complete Reactor capture'; links.append(anchor);
   }
 }

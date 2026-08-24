@@ -12,7 +12,6 @@ from harness.comparison.plan_c import (
     PairedDatasetRecorder,
     PlanCComparator,
     PlanCConfigurationError,
-    PlanCCoordinator,
     VisualEventAssessment,
 )
 from harness.schemas import EvaluationResult, ExperimentRecord, Scenario, Severity
@@ -30,8 +29,8 @@ def matched_specification(
             environment="isaac_sim",
             task="reach_target_without_collapsing_support",
             seed=17,
-            parameters={"target_position": [2.0, 0.0]},
-            hazards={"collapse_after_actions": 1},
+            parameters={"rover_linear_velocity_mps": 0.25, "control_steps": 180},
+            hazards={"zone": "RoofSupportZone", "event": "structural_collapse"},
         ),
         neural_scenario=Scenario(
             scenario_id="reactor-scenario-001",
@@ -175,42 +174,13 @@ def test_plan_c_validates_pairing_contract_and_exact_action_claims():
         )
 
 
-class StaticExecutor:
-    def __init__(
-        self, backend: str, *, environmental_failure: bool, failure_type: str | None
-    ) -> None:
-        self.backend = backend
-        self.environmental_failure = environmental_failure
-        self.failure_type = failure_type
-        self.seen: list[Scenario] = []
-
-    def run(self, scenario: Scenario) -> ExperimentRecord:
-        self.seen.append(scenario)
-        return record(
-            scenario,
-            self.backend,
-            environmental_failure=self.environmental_failure,
-            failure_type=self.failure_type,
-        )
-
-
-def test_plan_c_coordinator_persists_a_portable_paired_dataset_entry(tmp_path: Path):
-    specification = matched_specification()
-    isaac = StaticExecutor(
-        "isaac_sim", environmental_failure=True, failure_type="structural_collapse"
-    )
-    reactor = StaticExecutor(
-        "reactor/lingbot-world-2", environmental_failure=False, failure_type=None
-    )
+def test_plan_c_recorder_persists_a_portable_paired_dataset_entry(tmp_path: Path):
+    experiment = matched_experiment()
     recorder = PairedDatasetRecorder(tmp_path / "paired")
-    coordinator = PlanCCoordinator(isaac, reactor, PlanCComparator(), recorder)
-
-    result = coordinator.run(specification, assessment(observed=True))
+    result = PlanCComparator().compare(experiment, assessment(observed=True))
+    output = recorder.record(experiment, result)
 
     assert result.status is ComparisonStatus.CONSISTENT_VISUAL_EVIDENCE
-    assert isaac.seen == [specification.isaac_scenario]
-    assert reactor.seen == [specification.neural_scenario]
-    output = tmp_path / "paired" / specification.pair_id / "comparison.json"
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["comparison"]["status"] == "consistent_visual_evidence"
     assert payload["matched_experiment"]["isaac_record"]["backend"] == "isaac_sim"

@@ -85,8 +85,9 @@ def test_paired_capture_persists_browser_video_as_a_plan_c_pair(tmp_path: Path):
     camera.parent.mkdir(parents=True); run_dir.mkdir(parents=True)
     np.save(camera, np.zeros((12, 16, 4), dtype=np.uint8))
     scenario = Scenario(
-        environment="isaac_sim", task="reach_target", seed=7,
-        parameters={"target_position": [2.0, 0.0]}, hazards={"collapse_after_actions": 3},
+        environment="isaac_sim", task="mine_roof_support_interaction", seed=7,
+        parameters={"rover_linear_velocity_mps": 0.25, "control_steps": 180},
+        hazards={"zone": "RoofSupportZone", "event": "structural_collapse"},
     )
     (run_dir / "trajectory.jsonl").write_text(
         json.dumps({"record_type": "initial_observation", "observation": {"sensor_refs": [str(camera)]}}) + "\n"
@@ -102,12 +103,18 @@ def test_paired_capture_persists_browser_video_as_a_plan_c_pair(tmp_path: Path):
     class FakePromptModel:
         def create_prompt(self, request):
             assert request.initial_frame_path.is_file()
-            assert request.isaac_hazards["collapse_after_actions"] == 3
+            assert request.isaac_hazards["zone"] == "RoofSupportZone"
             return WorldPromptResult("A blue robot approaches an unstable support beam.", "resp_prompt")
 
     service = PairedCaptureService(store, runs, prompt_factory=lambda _model: FakePromptModel())
     prepared = service.prepare("isaac-run", objective="Compare collapse visuals", model="test-model")
     assert Path(prepared["initial_frame_path"]).is_file()
+    client = TestClient(create_app(store))
+    loaded = client.get(f"/api/pair-captures/{prepared['pair_id']}")
+    assert loaded.status_code == 200
+    assert loaded.json()["prompt"] == prepared["prompt"]
+    assert "initial_frame_path" not in loaded.json()
+    assert client.get("/api/pair-captures/not-a-uuid").status_code == 404
     result = service.finalize(prepared["pair_id"], b"webm-bytes", content_type="video/webm")
 
     pair = store.get_pair(result["pair_id"])
@@ -118,16 +125,21 @@ def test_paired_capture_persists_browser_video_as_a_plan_c_pair(tmp_path: Path):
     assert any(item["kind"] == "video" for item in store.artifacts_for("experiment", reactor["run_id"]))
 
 
-def test_dashboard_exposes_minimal_research_campaign_controls(tmp_path: Path):
+def test_dashboard_exposes_agents_sdk_campaign_controls(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("AGENT_MODEL", "test-model")
     client = TestClient(create_app(ExperimentStore(tmp_path / "experiments.sqlite3")))
-    created = client.post("/api/campaigns", json={"objective": "Find collapse boundary", "experiment_budget": 2, "model_provider": "openai", "model_name": "gpt-5.6-luna"})
+    created = client.post(
+        "/api/agent/campaigns",
+        json={"objective": "Find the roof-support failure boundary", "experiment_budget": 2},
+    )
     assert created.status_code == 201
     campaign_id = created.json()["campaign_id"]
-    assert client.post(f"/api/campaigns/{campaign_id}/instructions", json={"instruction": "Use low speeds."}).status_code == 201
-    assert client.post(f"/api/campaigns/{campaign_id}/pause").json()["status"] == "paused"
-    detail = client.get(f"/api/campaigns/{campaign_id}").json()
-    assert detail["current_iteration_detail"] is None
-    assert any(event["event_type"] == "campaign_paused" for event in detail["events"])
+    listed = client.get("/api/agent/campaigns").json()
+    assert [row["campaign_id"] for row in listed] == [campaign_id]
+    detail = client.get(f"/api/agent/campaigns/{campaign_id}").json()
+    assert detail["latest_iteration"] is None
+    assert detail["model_provider"] == "openai_agents_sdk"
+    assert any(event["event_type"] == "campaign_created" for event in detail["events"])
 
 
 def test_reindex_rebuilds_standard_and_paired_run_index(tmp_path: Path):

@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from harness.pairing import PairedCaptureService
-from harness.persistence import ExperimentStore
-from harness.research import ResearchCampaignStore
+from harness.persistence.store import ExperimentStore
+from harness.research.campaign import ResearchCampaignStore
 
 
 @dataclass(frozen=True, slots=True)

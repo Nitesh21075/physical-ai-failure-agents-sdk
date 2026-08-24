@@ -11,11 +11,11 @@ not move the rover chassis directly.
 inputs. For each run the worker creates:
 
 ```text
-runs/<run-id>/mine_rover_derived_entry.usda  # strong layer over the source world
-runs/<run-id>/mine_rover_session.usda        # session-only sensor edits
-runs/<run-id>/camera/rgb_*.png               # actual RTX camera frames
-runs/<run-id>/reactor_seed.json              # bounded visual-world seed
-runs/<run-id>/summary.json                   # control and pose provenance
+runs/isaac-mine/<run-id>/mine_rover_derived_entry.usda  # source-world overlay
+runs/isaac-mine/<run-id>/mine_rover_session.usda        # session-only edits
+runs/isaac-mine/<run-id>/camera/rgb_*.png               # actual RTX frames
+runs/isaac-mine/<run-id>/reactor_seed.json              # visual-world seed
+runs/isaac-mine/<run-id>/summary.json                   # pose/physics provenance
 ```
 
 The derived entry layer selects Nova Carter's `Config=Full_Merged` and
@@ -40,8 +40,8 @@ docker run --rm --gpus all --network host --user 0:0 --entrypoint bash \
   -v "$PWD:/workspace/project" \
   nvcr.io/nvidia/isaac-sim:6.0.1 \
   -lc 'cd /workspace/project && /isaac-sim/python.sh scripts/run_mine_rover_experiment.py \
-    --runs-dir /workspace/project/runs --run-id mine-rover-001 \
-    --linear-velocity-mps 0.25 --angular-velocity-radps 0.0 --control-steps 90'
+    --runs-dir /workspace/project/runs/isaac-mine --run-id mine-rover-001 \
+    --failure-zone roof_support --linear-velocity-mps 0.25 --control-steps 180'
 ```
 
 Use `--disable-camera` only for an articulation/PhysX diagnostic. It produces

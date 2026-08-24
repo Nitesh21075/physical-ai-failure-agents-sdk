@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from harness.agent_runtime.service import MineFailureResearchService
 from harness.pairing import PairedCaptureService, PairingError
 from harness.persistence.store import ExperimentStore, ReviewState
-from harness.research.campaign import CampaignState, ResearchCampaignStore
+from harness.research.campaign import ResearchCampaignStore
 
 
 def _timeline(trajectory_path: str | None) -> list[dict[str, Any]]:
@@ -66,18 +66,6 @@ def build_experiment_view(store: ExperimentStore, run_id: str) -> dict[str, Any]
 
 class ReviewUpdate(BaseModel):
     review_state: ReviewState
-
-
-class CampaignCreate(BaseModel):
-    objective: str
-    experiment_budget: int
-    constraints: dict[str, Any] = {}
-    model_provider: str | None = None
-    model_name: str | None = None
-
-
-class OperatorInstructionCreate(BaseModel):
-    instruction: str
 
 
 class PairCaptureCreate(BaseModel):
@@ -222,6 +210,13 @@ def create_app(store: ExperimentStore) -> FastAPI:
         except PairingError as error:
             raise HTTPException(404, str(error)) from error
 
+    @app.get("/api/pair-captures/{pair_id}")
+    def prepared_pair_capture(pair_id: str) -> dict[str, Any]:
+        try:
+            return paired_capture.prepared_capture(pair_id)
+        except PairingError as error:
+            raise HTTPException(404, str(error)) from error
+
     @app.post("/api/pair-captures/{pair_id}/recording", status_code=201)
     async def finish_pair_capture(pair_id: str, request: Request) -> dict[str, Any]:
         try:
@@ -245,28 +240,6 @@ def create_app(store: ExperimentStore) -> FastAPI:
     def experiments() -> list[dict[str, Any]]:
         return store.list_experiments()
 
-    @app.get("/api/campaigns")
-    def campaigns() -> list[dict[str, Any]]:
-        return research.list_campaigns()
-
-    @app.post("/api/campaigns", status_code=201)
-    def create_campaign(payload: CampaignCreate) -> dict[str, Any]:
-        campaign_id = research.create_campaign(
-            payload.objective,
-            experiment_budget=payload.experiment_budget,
-            constraints=payload.constraints,
-            model_provider=payload.model_provider,
-            model_name=payload.model_name,
-        )
-        return research.get_campaign(campaign_id) or {}
-
-    @app.get("/api/campaigns/{campaign_id}")
-    def campaign(campaign_id: str) -> dict[str, Any]:
-        result = research.get_campaign(campaign_id)
-        if not result:
-            raise HTTPException(404, "campaign not found")
-        return {**result, "current_iteration_detail": research.latest_iteration(campaign_id), "events": research.list_events(campaign_id)}
-
     def agent_service() -> MineFailureResearchService:
         model = os.environ.get("AGENT_MODEL") or os.environ.get("RESEARCH_MODEL")
         if not model:
@@ -276,13 +249,27 @@ def create_app(store: ExperimentStore) -> FastAPI:
     @app.post("/api/agent/campaigns", status_code=201)
     def create_agent_campaign(payload: AgentCampaignCreate) -> dict[str, Any]:
         try:
-            service = agent_service()
-            campaign_id = service.create_campaign(
-                payload.objective, experiment_budget=payload.experiment_budget
+            model = os.environ.get("AGENT_MODEL") or os.environ.get("RESEARCH_MODEL")
+            if not model:
+                raise HTTPException(503, "AGENT_MODEL or RESEARCH_MODEL must be configured")
+            campaign_id = research.create_campaign(
+                payload.objective,
+                experiment_budget=payload.experiment_budget,
+                model_provider="openai_agents_sdk",
+                model_name=model,
+                capability_version="mine_v1-agents-sdk-v1",
+                simulator_metadata={"container_image": "nvcr.io/nvidia/isaac-sim:6.0.1"},
             )
-            return service.campaign_store.get_campaign(campaign_id) or {}
+            return research.get_campaign(campaign_id) or {}
         except ValueError as error:
             raise HTTPException(400, str(error)) from error
+
+    @app.get("/api/agent/campaigns")
+    def agent_campaigns() -> list[dict[str, Any]]:
+        return [
+            row for row in research.list_campaigns()
+            if row.get("model_provider") == "openai_agents_sdk"
+        ]
 
     @app.get("/api/agent/campaigns/{campaign_id}")
     def agent_campaign(campaign_id: str) -> dict[str, Any]:
@@ -319,23 +306,6 @@ def create_app(store: ExperimentStore) -> FastAPI:
     @app.post("/api/agent/campaigns/{campaign_id}/continue")
     async def continue_agent(campaign_id: str, payload: AgentStepCreate) -> dict[str, Any]:
         return await run_agent_step(campaign_id, payload.instruction)
-
-    @app.post("/api/campaigns/{campaign_id}/instructions", status_code=201)
-    def add_campaign_instruction(campaign_id: str, payload: OperatorInstructionCreate) -> dict[str, str]:
-        if not research.get_campaign(campaign_id):
-            raise HTTPException(404, "campaign not found")
-        return {"instruction_id": research.add_instruction(campaign_id, payload.instruction)}
-
-    @app.post("/api/campaigns/{campaign_id}/{command}")
-    def control_campaign(campaign_id: str, command: str) -> dict[str, Any]:
-        transitions = {"pause": CampaignState.PAUSED, "resume": CampaignState.RUNNING, "stop": CampaignState.STOPPED}
-        if command not in transitions:
-            raise HTTPException(404, "unknown campaign command")
-        try:
-            research.transition_campaign(campaign_id, transitions[command])
-        except KeyError as error:
-            raise HTTPException(404, "campaign not found") from error
-        return research.get_campaign(campaign_id) or {}
 
     @app.get("/api/overview")
     def overview() -> dict[str, list[dict[str, Any]]]:

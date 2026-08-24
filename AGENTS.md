@@ -1,85 +1,47 @@
-# AGENTS.md
+# Repository instructions
 
-## Project purpose
+## Product boundary
 
-Build the Physical AI Failure Research Harness described in `docs/PROJECT.md`.
+This repository implements one `MineFailureResearcher` using the official
+OpenAI Agents SDK. The SDK `Runner` owns model/tool iteration. Do not add a host
+pipeline that prescribes inspect, Isaac, Reactor, or comparison order.
 
-The immediate implementation target is Plan B: a modular closed-loop research harness for generating, executing, evaluating, and recording robot experiments in interchangeable environments.
+Before architecture or runtime changes, read:
 
-## Read first
+1. `docs/AGENTS_SDK_RUNTIME.md`
+2. `docs/MINE_ROVER_EXPERIMENT.md`
+3. `assets/worlds/mine_v1/manifest.json`
 
-Before making architectural changes, read:
+## Authority and safety
 
-1. `docs/PROJECT.md`
-2. `docs/ARCHITECTURE.md`
-3. `docs/PLANS.md`
+- Isaac/PhysX is physics-grounded simulation evidence, not real-world truth.
+- Reactor is neural-world visual evidence, not physical ground truth.
+- A mismatch is a candidate discrepancy until reviewed.
+- Never fabricate experiments, media, contact, motion, or measurements.
+- Never add shell, arbitrary Python, generic file mutation, unrestricted
+  Docker arguments, or unrestricted Omniverse access to the model tool surface.
+- Keep Isaac tool arguments typed and bounded. One ordinary research step may
+  claim at most one new Isaac run.
+- Keep runtime context as local Python dependencies via `ToolContext`; do not
+  serialize services or secrets into prompts.
+- Never commit `.env`, API keys, `runs/`, simulator caches, or generated media.
 
-## Core architectural rule
+## Persistence
 
-Keep the environment backend abstract. Do not couple the orchestrator to Isaac Sim.
+- `agents.SQLiteSession(campaign_id, runs/agent_sessions.sqlite3)` is working
+  conversation memory.
+- `ResearchCampaignStore`, `ExperimentStore`, and `runs/` are authoritative
+  scientific memory.
+- Do not restore `previous_response_id` continuity or the deleted Responses API
+  proposal pipeline.
+- Hooks may persist lifecycle metadata and compact tool results, never hidden
+  chain-of-thought.
 
-The environment abstraction should conceptually support:
+## Testing
 
-- `reset(...)`
-- `step(action)`
-- `observe()`
-- `close()`
+Run focused tests and lint for every change. Unit tests do not establish live
+acceptance: claims about SDK selection, Isaac physics, recording, Reactor, or
+session resume require corresponding real evidence. Record failures honestly
+in `docs/AGENTS_SDK_RUNTIME.md`; do not replace missing evidence with mocks.
 
-Initial backends:
-
-- a local/mock environment for development and tests
-- Isaac Sim on the AWS workstation
-- a Reactor/neural-world backend if the hackathon credentials expose a suitable closed-loop API
-
-Plan C should be possible by running the same experiment against multiple backends.
-
-## Development environment
-
-Local development:
-- WSL2
-- Ubuntu 24.04 LTS recommended
-- ordinary Python tooling
-- Git/GitHub
-
-Simulation:
-- AWS Linux GPU workstation
-- Isaac Sim in Docker
-- project repository mounted from the AWS host into the Isaac Sim container
-
-Do not require Isaac Sim to be installed on the developer's Windows/WSL machine.
-
-NVIDIA currently recommends the Isaac Sim container for remote/headless/cloud deployments. Keep simulator-specific dependencies isolated in the simulator backend/container.
-
-## Coding principles
-
-- Prefer small, explicit interfaces over large agent frameworks.
-- Keep orchestration deterministic and inspectable.
-- Use structured schemas for scenarios, actions, observations, trajectories, and evaluation results.
-- Keep LLM/world-model calls behind adapters.
-- Never put API keys in source control.
-- Avoid committing generated trajectories, videos, simulator caches, or large assets.
-- Add tests for backend-independent logic so most of the harness can be developed without Isaac Sim.
-- Do not claim that a generative video world model provides structured physical state unless its actual API does so.
-- Treat neural-world outputs and physics-simulator state as distinct data types.
-
-## Runtime roles
-
-- **Orchestrator:** runs experiments and controls the loop.
-- **Scenario agent:** proposes/searches experiments using structured history.
-- **Robot controller/policy:** maps observations to actions.
-- **Environment:** executes actions and returns observations.
-- **Evaluator:** determines task outcome and, importantly, environmental consequences/failures.
-- **Recorder:** stores trajectories and metadata.
-- **Memory:** compact structured experiment history, not an unbounded chat transcript.
-
-## Plan C requirement
-
-The same scenario/action sequence should be representable across backends whenever possible so that neural-world and physics-world results can be compared.
-
-Do not prematurely implement Plan C-specific logic in the core orchestrator. Add comparison as a separate layer.
-
-## Agentic coding
-
-Codex/Claude Code may be used extensively during development. They are development tools, not required runtime components.
-
-When a requested feature requires Isaac Sim APIs, inspect the installed/container version and current NVIDIA documentation rather than guessing API names.
+Inspect installed SDK and Isaac APIs before making version-specific changes.

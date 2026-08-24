@@ -10,9 +10,8 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 WORLD_DIRECTORY = PROJECT_ROOT / "assets" / "worlds" / "mine_v1"
@@ -341,9 +340,12 @@ def main() -> int:
             _render_cameras(
                 world,
                 ("/World/Sensors/ResearchCamera", "/World/Sensors/OverviewCamera"),
-                (WORLD_DIRECTORY / "previews" / "research_camera.png", WORLD_DIRECTORY / "previews" / "overview_camera.png"),
+                (
+                    args.record_dir.resolve() / "research_camera.png",
+                    args.record_dir.resolve() / "overview_camera.png",
+                ),
             )
-            print("rendered: previews/research_camera.png, previews/overview_camera.png")
+            print(f"rendered validation cameras under: {args.record_dir.resolve()}")
         if args.smoke_test:
             _roof_support_smoke_test(world, stage, render=not args.skip_render, record_dir=args.record_dir.resolve())
         return 0
@@ -357,7 +359,7 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         exit_code = main()
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - report Isaac/Kit startup failures at CLI boundary
         print(f"mine-world validation failed: {error}", file=sys.stderr)
         exit_code = 1
     finally:

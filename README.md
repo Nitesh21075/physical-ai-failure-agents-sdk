@@ -1,27 +1,25 @@
-# Physical AI Failure Research Harness
+# Physical AI Failure Agents SDK
 
-An experimental harness for discovering and collecting rare environmental failure trajectories for physical AI.
+This repository contains one persistent, tool-using research agent for mine
+roof-support experiments. The official OpenAI Agents SDK owns the model/tool
+loop. Isaac Sim provides physics-grounded simulation evidence; Reactor provides
+neural-world visual evidence; neither is presented as real-world truth.
 
-## Primary runtime: OpenAI Agents SDK
-
-The primary mine research runtime is one persistent tool-using agent,
-`MineFailureResearcher`, built with the official Python `openai-agents` package.
-The Agents SDK `Runner` owns the model/tool loop; host code does not prescribe a
-fixed inspect → simulate → compare sequence.
+## Quick start
 
 ```bash
 python -m venv .venv
-.venv/bin/pip install -e '.[research,dev]'
+.venv/bin/pip install -e '.[dev]'
 export OPENAI_API_KEY='<key>'
 export AGENT_MODEL='<model available to this account>'
 
 .venv/bin/python scripts/run_agents_researcher.py \
-  'Investigate roof-support failure in the mine. Use tools.' \
+  'Investigate roof-support failure in the mine. Inspect the world and prior evidence, then use at most one new Isaac experiment.' \
   --experiment-budget 2
 ```
 
-The CLI prints a campaign ID. Reuse it in a later process to continue the same
-SQLite-backed agent conversation:
+Reuse the printed campaign ID in a later process to resume the same persistent
+SDK conversation:
 
 ```bash
 .venv/bin/python scripts/run_agents_researcher.py \
@@ -29,48 +27,34 @@ SQLite-backed agent conversation:
   --campaign-id '<campaign-id>'
 ```
 
-See [`docs/AGENTS_SDK_RUNTIME.md`](docs/AGENTS_SDK_RUNTIME.md) for the exact
-runtime call graph, model-visible tools, persistence boundaries, and the legacy
-fallback boundary.
-
-The core idea is to run robot experiments in interchangeable environments (initially Isaac Sim, later neural world models such as Reactor) and record the resulting actions, observations, world state, and environmental consequences.
-
-## Legacy fallback and historical plans
-
-- **Plan B — Failure Research Harness:** build the reusable closed-loop orchestration/data-collection system first.
-- **Plan A — Neural World Model Environment:** if the available world-model API supports closed-loop robotics interaction, make the neural world model the primary environment.
-- **Plan C — Neural vs Physics:** run equivalent experiments in a neural world model and Isaac Sim, compare trajectories/outcomes, and collect high-value discrepancies and rare physical failures.
-
-Plan C's capability-gated paired-comparison design is documented in
-[`docs/PLAN_C.md`](docs/PLAN_C.md). It keeps Isaac physical outcomes distinct
-from non-authoritative Reactor video evidence.
-
-## Local experiment review
-
-`runs/` remains the authoritative artifact store. Rebuild its small SQLite
-index (and derive Isaac PNG/MP4 replay plus Reactor media manifests) with:
+Run the dashboard:
 
 ```bash
-.venv/bin/python scripts/reindex_runs.py --runs-dir runs --database runs/experiments.sqlite3
+.venv/bin/python scripts/run_dashboard.py \
+  --database runs/experiments.sqlite3 --port 8000
 ```
 
-Run the local-only Plan C review dashboard with:
+Open `http://127.0.0.1:8000/agent` for campaigns,
+`http://127.0.0.1:8000/reactor` for browser capture, and
+`http://127.0.0.1:8000/` for recorded evidence.
 
-```bash
-.venv/bin/python scripts/run_dashboard.py --database runs/experiments.sqlite3 --port 8000
-```
+## What is retained
 
-See [`docs/EXPERIMENT_PERSISTENCE_DASHBOARD.md`](docs/EXPERIMENT_PERSISTENCE_DASHBOARD.md)
-for the database boundary, artifacts, and SSH-forwarded AWS workflow.
+- `src/harness/agent_runtime/`: agent definition, seven bounded tools, hooks,
+  context, session, and Runner entrypoint.
+- `src/harness/research/`: campaign persistence, world-prompt generation, and
+  visual evidence assessment—not the former proposal/pipeline runtime.
+- `src/harness/persistence/`, `pairing.py`, `comparison/`, and `media/`:
+  authoritative evidence indexing and comparison.
+- `scripts/run_mine_rover_experiment.py` and `assets/worlds/mine_v1/`: the real
+  Isaac Sim mine experiment boundary.
+- `src/harness/dashboard/`: the existing visual evidence and operator UI.
 
-## Important definition of failure
+There is no shell, arbitrary Python, generic filesystem mutation, unrestricted
+Docker, or Codex tool exposed to the model.
 
-A failure is not merely the robot failing its task.
-
-The primary target is an **environmental failure/consequence caused or triggered by robot actions**, for example:
-
-`robot action -> structural instability -> roof collapse`
-
-Other examples include fire ignition/spread, falling beams/debris, secondary structural collapse, hazardous obstruction, or other high-penalty environmental events.
-
-See `docs/PROJECT.md` and `docs/ARCHITECTURE.md` for the current design.
+Read [docs/AGENTS_SDK_RUNTIME.md](docs/AGENTS_SDK_RUNTIME.md) for the exact
+call graph, full agent instructions, tool surface, persistence model, verified
+test evidence, and currently unresolved acceptance boundaries. Read
+[docs/MINE_ROVER_EXPERIMENT.md](docs/MINE_ROVER_EXPERIMENT.md) for the physical
+world and experiment details.

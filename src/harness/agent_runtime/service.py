@@ -13,8 +13,8 @@ from harness.agent_runtime.isaac_service import MineIsaacToolService
 from harness.agent_runtime.researcher import create_researcher
 from harness.agent_runtime.schemas import ResearchStepSummary
 from harness.pairing import PairedCaptureService
-from harness.persistence import ExperimentStore
-from harness.research import ResearchCampaignStore
+from harness.persistence.store import ExperimentStore
+from harness.research.campaign import ResearchCampaignStore
 
 
 class MineFailureResearchService:

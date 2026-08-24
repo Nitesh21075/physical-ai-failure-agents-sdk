@@ -1,15 +1,11 @@
-"""Small, serializable schemas shared by every harness backend.
-
-These models deliberately describe the boundary between orchestration and an
-environment.  A backend may keep richer native state internally, but it should
-emit these portable records for experiments and comparison work.
-"""
+"""Small serializable records shared by scientific persistence and Plan C."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
-from typing import Any, Mapping
+from typing import Any
 from uuid import uuid4
 
 
@@ -60,7 +56,7 @@ class Scenario:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "Scenario":
+    def from_dict(cls, value: Mapping[str, Any]) -> Scenario:
         return cls(
             scenario_id=value.get("scenario_id", str(uuid4())),
             environment=value["environment"],
@@ -70,106 +66,13 @@ class Scenario:
             hazards=value.get("hazards", {}),
         )
 
-
-@dataclass(frozen=True, slots=True)
-class Observation:
-    simulation_time: float
-    state: Mapping[str, Any] = field(default_factory=dict)
-    sensor_refs: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        if self.simulation_time < 0:
-            raise SchemaValidationError("simulation_time cannot be negative")
-        object.__setattr__(self, "state", _mapping(self.state, "state"))
-        object.__setattr__(self, "sensor_refs", tuple(self.sensor_refs))
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-
-@dataclass(frozen=True, slots=True)
-class Action:
-    name: str
-    parameters: Mapping[str, Any] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        _non_empty_string(self.name, "action name")
-        object.__setattr__(self, "parameters", _mapping(self.parameters, "action parameters"))
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-
-@dataclass(frozen=True, slots=True)
-class Event:
-    event_type: str
-    category: str
-    severity: Severity = Severity.NONE
-    catastrophic: bool = False
-    details: Mapping[str, Any] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        _non_empty_string(self.event_type, "event_type")
-        _non_empty_string(self.category, "event category")
-        if not isinstance(self.severity, Severity):
-            object.__setattr__(self, "severity", Severity(self.severity))
-        object.__setattr__(self, "details", _mapping(self.details, "event details"))
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-
-@dataclass(frozen=True, slots=True)
-class StepResult:
-    simulation_time: float
-    observation: Observation
-    done: bool
-    events: tuple[Event, ...] = ()
-    world_state: Mapping[str, Any] | None = None
-
-    def __post_init__(self) -> None:
-        if self.simulation_time < 0:
-            raise SchemaValidationError("simulation_time cannot be negative")
-        if not isinstance(self.observation, Observation):
-            raise SchemaValidationError("observation must be an Observation")
-        object.__setattr__(self, "events", tuple(self.events))
-        if not all(isinstance(event, Event) for event in self.events):
-            raise SchemaValidationError("events must contain Event values")
-        if self.world_state is not None:
-            object.__setattr__(self, "world_state", _mapping(self.world_state, "world_state"))
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-
-@dataclass(frozen=True, slots=True)
-class TrajectoryStep:
-    index: int
-    observation: Observation
-    action: Action
-    result: StepResult
-
-    def __post_init__(self) -> None:
-        if self.index < 0:
-            raise SchemaValidationError("trajectory step index cannot be negative")
-        if not isinstance(self.observation, Observation):
-            raise SchemaValidationError("trajectory observation must be an Observation")
-        if not isinstance(self.action, Action):
-            raise SchemaValidationError("trajectory action must be an Action")
-        if not isinstance(self.result, StepResult):
-            raise SchemaValidationError("trajectory result must be a StepResult")
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-
 @dataclass(frozen=True, slots=True)
 class EvaluationResult:
     task_success: bool
     environmental_failure: bool
     failure_type: str | None
     severity: Severity
-    robot_safety_events: tuple[Event, ...] = ()
+    robot_safety_events: tuple[Mapping[str, Any], ...] = ()
     terminal: bool = False
     metrics: Mapping[str, Any] = field(default_factory=dict)
     evidence_refs: tuple[str, ...] = ()
@@ -181,7 +84,11 @@ class EvaluationResult:
             raise SchemaValidationError("environmental failures require a failure_type")
         if not self.environmental_failure and self.failure_type is not None:
             raise SchemaValidationError("failure_type requires environmental_failure")
-        object.__setattr__(self, "robot_safety_events", tuple(self.robot_safety_events))
+        object.__setattr__(
+            self,
+            "robot_safety_events",
+            tuple(_mapping(event, "robot safety event") for event in self.robot_safety_events),
+        )
         object.__setattr__(self, "metrics", _mapping(self.metrics, "metrics"))
         object.__setattr__(self, "evidence_refs", tuple(self.evidence_refs))
 

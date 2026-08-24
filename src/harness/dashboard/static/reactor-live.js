@@ -207,6 +207,32 @@ async function preparePair() {
   }
 }
 
+async function loadPreparedPair() {
+  const pairId = new URLSearchParams(location.search).get("pair_id");
+  if (!pairId) return;
+  try {
+    message("Loading the agent-prepared Reactor comparison…");
+    const response = await fetch(`/api/pair-captures/${encodeURIComponent(pairId)}`);
+    const pair = await response.json();
+    if (!response.ok) throw new Error(pair.detail || "Unable to load the prepared pair.");
+    const imageResponse = await fetch(pair.seed_image_url);
+    if (!imageResponse.ok) throw new Error("Unable to load the prepared Isaac seed frame.");
+    const blob = await imageResponse.blob();
+    state.pair = {
+      ...pair,
+      image: new File([blob], "isaac_initial_frame.png", { type: blob.type || "image/png" }),
+      seed: Number(pair.seed) || 42,
+    };
+    $("#paired-isaac-run").value = pair.isaac_run_id;
+    $("#paired-objective").value = pair.objective || "";
+    $("#reactor-prompt").value = pair.prompt;
+    message("Agent-prepared pair loaded. Connect, then start the world.");
+  } catch (error) {
+    state.pair = null;
+    message(error.message || "Unable to load the prepared pair.", true);
+  }
+}
+
 async function controls(changes) {
   if (!state.started) return;
   try {
@@ -273,4 +299,4 @@ fetch("/api/reactor/live-config").then((response) => response.json()).then((conf
   else { $("#reactor-status").textContent = "REACTOR_API_KEY not configured"; message("Set REACTOR_API_KEY on the dashboard server to enable live sessions.", true); $("#connect-reactor").disabled = true; }
 }).catch(() => { $("#reactor-status").textContent = "Configuration unavailable"; });
 
-loadIsaacRecordings();
+loadIsaacRecordings().then(loadPreparedPair);

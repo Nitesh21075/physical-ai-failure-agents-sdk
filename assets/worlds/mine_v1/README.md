@@ -9,9 +9,8 @@ mine_world.usda                 composed entry stage
 mine_base.usda                  original static mine shell and props
 sections/extended_drift.usda    connected 32m static drift extension
 layers/                         physics, materials, lighting sublayers
-hazards/                        individually referenced legacy and extended hazards
+hazards/                        authored roof-support, rockfall, and debris components
 robots/inspection_robot.usda    Nova Carter reference + local proxy fallback variant
-previews/                       rendered fixed-camera images
 manifest.json                   stable prim registry for workers/tools
 ```
 
@@ -48,9 +47,9 @@ collider, and cannot secretly hold the beam after the primary support moves.
 ## Rover-caused failures
 
 The default rover is NVIDIA Nova Carter: a real articulated wheeled robot, not
-a fake event trigger. A future controller/VLA should command its wheel joints
-and consume `/World/Robot/VLACamera` (plus any selected built-in Nova Carter
-sensors). It must not teleport the chassis or invoke a `collapse` command.
+a fake event trigger. The retained mine runner commands its wheel joints and
+captures `/World/Robot/VLACamera`. It does not teleport the chassis during an
+experiment or invoke a `collapse` command.
 
 - **Roof support:** approach the negative-Y side of
   `SupportPrimary/PushFace`, then drive in positive Y. The support is a
@@ -63,12 +62,10 @@ sensors). It must not teleport the chassis or invoke a `collapse` command.
 - **Debris:** drive the chassis into `Debris01` or `Debris02`; both are
   independent rigid bodies and require no special trigger.
 
-These interaction recipes are registered in `manifest.json`. They are world
-contracts for a future world-aware worker; the currently documented v1 Isaac
-Worker remains intentionally limited to the original reference scene and does
-not yet load or command this world. A future worker should map normal rover
-movement commands to contact attempts and observe body poses/contact outcomes,
-not expose an artificial `collapse` command.
+These interaction recipes are registered in `manifest.json`. Only roof support
+is currently exposed as an executable Agents SDK tool. Rockfall and debris are
+authored world capabilities, not executable claims. The roof-support runner
+uses normal wheel motion and records body poses and contact-derived outcomes.
 
 ## New stable failure-zone paths
 
@@ -102,34 +99,34 @@ cameras are untouched.
 ## Parameterization and reproducible experiments
 
 The manifest's `failure_zones` registry maps every experiment-facing path.
-An experiment/session layer may override USD transforms, `physics:mass`, or a
-`material:binding:physics` relationship without changing the base world. In
-particular, roof runs may change the primary-support offset/rotation/friction/
-mass, beam mass/pose, rover start pose, and target pose. Rockfall runs may
-change rock poses/masses, retainer pose, ledge slope, contact material, and
-rover start pose. There is no arbitrary script-execution field in the asset.
+An experiment/session layer can override selected authored properties without
+changing the base world. The current agent tool exposes only rover linear
+velocity, control-step count, and seed. It does not advertise support offset,
+mass, friction, arbitrary prim paths, or world editing because those per-run
+controls have not been accepted. There is no arbitrary script-execution field.
 
 ## Validate in the AWS Isaac container
 
 Run from the repository checkout that contains this world:
 
 ```bash
-sudo docker run --rm --gpus all --network host --user 0:0 --entrypoint bash \
-  -e ACCEPT_EULA=Y -e PRIVACY_CONSENT=Y -e HOME=/tmp \
+docker run --rm --gpus all --network host --user 0:0 --entrypoint bash \
+  -e ACCEPT_EULA=Y -e PRIVACY_CONSENT=Y -e HOME=/tmp -e OMNI_KIT_ALLOW_ROOT=1 \
+  -v mine-rover-isaac-cache:/tmp/.cache \
+  -v mine-rover-omniverse-data:/tmp/.nvidia-omniverse \
   -v "$PWD:/workspace/project" \
   nvcr.io/nvidia/isaac-sim:6.0.1 \
-  -lc 'cd /workspace/project && /isaac-sim/python.sh scripts/validate_mine_world.py --smoke-test --record-dir /workspace/project/runs/mine-world-validation'
+  -lc 'cd /workspace/project && /isaac-sim/python.sh scripts/validate_mine_world.py \
+    --smoke-test --skip-render \
+    --record-dir /workspace/project/runs/mine-world-validation'
 ```
 
-The command opens the real composed stage, verifies all legacy and extended
-paths/physics APIs, steps PhysX, renders the fixed cameras to `previews/`, and
-runs the bounded roof-support rover-contact smoke test. The runner places the
-existing rover chassis at an ephemeral experiment start pose and applies a
-bounded forward velocity; only real chassis/support/beam contact can cause the
-observed fall. It never writes any world USD. The final contact frame is written
-to `runs/mine-world-validation/roof_support_after_contact.png`.
-
-`previews/research_camera.png` and `previews/overview_camera.png` are temporary visual composition previews generated from the authored scene brief. They are not simulator frames: the current workstation image stalls in RTX PSO compilation even for the existing Phase 2 camera smoke scene. Replace them with the validator's camera output when that container condition is resolved; do not use the temporary research preview as a Reactor seed.
+The command opens the real composed stage, verifies the stable paths and physics
+APIs, steps PhysX, and runs the bounded roof-support rover-contact smoke test.
+The runner places the existing rover chassis at an ephemeral start pose and
+applies bounded forward velocity; only real chassis/support/beam interaction can
+cause the observed fall. It never writes the source world. Use the mine-runner
+camera frames from an indexed run as Reactor evidence.
 
 ## Open interactively
 

@@ -9,8 +9,8 @@ from agents import SQLiteSession
 from harness.agent_runtime.context import AgentRuntimeConfig, AgentRuntimeContext
 from harness.agent_runtime.isaac_service import MineIsaacToolService
 from harness.agent_runtime.researcher import create_researcher
-from harness.persistence import ExperimentStore
-from harness.research import ResearchCampaignStore
+from harness.persistence.store import ExperimentStore
+from harness.research.campaign import ResearchCampaignStore
 
 
 def _context(tmp_path: Path, *, budget: int = 2) -> AgentRuntimeContext:

@@ -39,11 +39,6 @@
     "rockfall_zone": "/World/Sensors/RockfallCamera",
     "debris_cascade_zone": "/World/Sensors/DebrisCamera"
   },
-  "previews": {
-    "research": "previews/research_camera.png",
-    "overview": "previews/overview_camera.png",
-    "status": "temporary_composition_previews_pending_isaac_rtx_render"
-  },
   "hazard_zones": {
     "roof_support": {
       "root": "/World/FailureZones/Zone_RoofSupport",

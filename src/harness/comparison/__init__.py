@@ -9,7 +9,6 @@ from harness.comparison.plan_c import (
     PairedDatasetRecorder,
     PlanCComparator,
     PlanCConfigurationError,
-    PlanCCoordinator,
     VisualEventAssessment,
 )
 
@@ -22,6 +21,5 @@ __all__ = [
     "PairedDatasetRecorder",
     "PlanCComparator",
     "PlanCConfigurationError",
-    "PlanCCoordinator",
     "VisualEventAssessment",
 ]

@@ -1,7 +1,6 @@
 """Plan C: paired neural-world and physics-world experiment comparison.
 
-The comparison layer deliberately sits outside :mod:`harness.orchestration`.
-Isaac evaluations remain the source of truth for physical consequences.  A
+Isaac evaluations remain the source of truth for physical consequences. A
 Reactor result is represented as labelled visual evidence and can identify a
 candidate discrepancy, never establish a physical fact on its own.
 """
@@ -9,10 +8,11 @@ candidate discrepancy, never establish a physical fact on its own.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Mapping, Protocol
+from typing import Any
 from uuid import uuid4
 
 from harness.schemas import ExperimentRecord, Scenario
@@ -262,40 +262,6 @@ class PlanCComparator:
             ),
             **common,
         )
-
-
-class ExperimentExecutor(Protocol):
-    """Runs a supplied backend-specific scenario and returns its normal record."""
-
-    def run(self, scenario: Scenario) -> ExperimentRecord: ...
-
-
-class PlanCCoordinator:
-    """Execute a declared pair, compare it, and write a paired dataset record."""
-
-    def __init__(
-        self,
-        isaac_executor: ExperimentExecutor,
-        neural_executor: ExperimentExecutor,
-        comparator: PlanCComparator,
-        recorder: "PairedDatasetRecorder",
-    ) -> None:
-        self.isaac_executor = isaac_executor
-        self.neural_executor = neural_executor
-        self.comparator = comparator
-        self.recorder = recorder
-
-    def run(
-        self,
-        specification: MatchedExperimentSpec,
-        visual_assessment: VisualEventAssessment | None = None,
-    ) -> ComparisonResult:
-        isaac_record = self.isaac_executor.run(specification.isaac_scenario)
-        neural_record = self.neural_executor.run(specification.neural_scenario)
-        experiment = MatchedExperiment(specification, isaac_record, neural_record)
-        result = self.comparator.compare(experiment, visual_assessment)
-        self.recorder.record(experiment, result)
-        return result
 
 
 class PairedDatasetRecorder:

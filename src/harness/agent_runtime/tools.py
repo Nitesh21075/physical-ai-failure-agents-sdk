@@ -168,7 +168,6 @@ async def run_mine_roof_support_experiment(
     """
     local = ctx.context
     local.mine_isaac_service._validate(rover_linear_velocity_mps, control_steps, seed)
-    local.claim_isaac_budget()
     previous = local.experiment_store.list_experiments()
     signature = {
         "rover_linear_velocity_mps": float(rover_linear_velocity_mps),
@@ -184,6 +183,7 @@ async def run_mine_roof_support_experiment(
             raise ValueError(
                 "this exact parameter configuration already exists; provide a scientific reason and choose a changed configuration"
             )
+    local.claim_isaac_budget()
     local.campaign_store.transition_campaign(local.campaign_id, "running")
     iteration_id = local.campaign_store.begin_iteration(
         local.campaign_id, {"runtime": "openai_agents_sdk", "requested_parameters": signature}
@@ -243,7 +243,7 @@ async def prepare_reactor_comparison(
         "seed_image_url": prepared["seed_image_url"],
         "prompt": prepared["prompt"],
         "status": "WAITING_FOR_REACTOR_CAPTURE",
-        "gui_route": "/reactor",
+        "gui_route": f"/reactor?pair_id={prepared['pair_id']}",
     }
 
 
@@ -265,7 +265,7 @@ def get_pair_status(ctx: ToolContext[AgentRuntimeContext], pair_id: str) -> dict
             "comparison_exists": False,
             "visual_assessment_exists": False,
             "human_review": None,
-            "gui_route": "/reactor",
+            "gui_route": f"/reactor?pair_id={pair_id}",
         }
     reactor = ctx.context.experiment_store.get_experiment(pair["reactor_run_id"])
     media = (

@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "physical-ai-failure-harness"
-version = "0.1.0"
-description = "Research harness for rare environmental failure scenarios in physical AI."
+name = "physical-ai-failure-agents-sdk"
+version = "0.2.0"
+description = "OpenAI Agents SDK harness for mine failure research in Isaac Sim and Reactor."
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.110",
@@ -13,13 +13,11 @@ dependencies = [
     "Pillow>=10",
     "imageio-ffmpeg>=0.5",
     "numpy>=1.26",
-]
-
-[project.optional-dependencies]
-research = [
     "openai>=1.0",
     "openai-agents>=0.4",
 ]
+
+[project.optional-dependencies]
 dev = [
     "pytest>=8",
     "ruff>=0.8",

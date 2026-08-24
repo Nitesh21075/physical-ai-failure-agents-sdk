@@ -10,7 +10,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from harness.media.isaac_export import export_isaac_replay
-from harness.persistence import ExperimentStore
+from harness.persistence.store import ExperimentStore
 
 
 class MineIsaacToolService:

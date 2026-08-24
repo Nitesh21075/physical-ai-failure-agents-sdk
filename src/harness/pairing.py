@@ -6,7 +6,7 @@ import json
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from harness.comparison.plan_c import (
     ActionAlignment,
@@ -84,6 +84,19 @@ class PairedCaptureService:
             raise PairingError("the prepared Isaac seed frame is no longer available")
         return path
 
+    def prepared_capture(self, pair_id: str) -> dict:
+        """Return only the browser fields needed to resume an agent-prepared capture."""
+        prepared = self._prepared(pair_id)
+        return {
+            "pair_id": prepared["pair_id"],
+            "isaac_run_id": prepared["isaac_run_id"],
+            "seed": prepared["seed"],
+            "prompt": prepared["prompt"],
+            "objective": prepared["objective"],
+            "created_at": prepared["created_at"],
+            "seed_image_url": f"/api/pair-captures/{prepared['pair_id']}/seed",
+        }
+
     def finalize(self, pair_id: str, media: bytes, *, content_type: str) -> dict:
         if not media:
             raise PairingError("the Reactor recording is empty")
@@ -134,7 +147,11 @@ class PairedCaptureService:
         return {"pair_id": pair_id, "reactor_run_id": reactor_run_id, "comparison_status": comparison.status, "comparison_url": f"/pairs/{pair_id}"}
 
     def _prepared_path(self, pair_id: str) -> Path:
-        return self.runs_root / "pending_pairs" / pair_id / "prepared.json"
+        try:
+            safe_id = str(UUID(pair_id))
+        except (TypeError, ValueError) as error:
+            raise PairingError("pair_id must be a UUID") from error
+        return self.runs_root / "pending_pairs" / safe_id / "prepared.json"
 
     def _prepared(self, pair_id: str) -> dict:
         path = self._prepared_path(pair_id)
