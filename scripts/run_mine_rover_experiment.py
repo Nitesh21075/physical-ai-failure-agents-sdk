@@ -54,7 +54,11 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--camera-width", type=int, default=320)
     parser.add_argument("--camera-tick-rate-hz", type=float, default=10.0)
     parser.add_argument("--capture-every", type=int, default=15)
-    parser.add_argument("--failure-zone", choices=("roof_support",), default="roof_support")
+    parser.add_argument(
+        "--failure-zone",
+        default="roof_support",
+        help="A failure-zone key declared by the selected stage's manifest.",
+    )
     parser.add_argument(
         "--disable-camera",
         action="store_true",
@@ -95,6 +99,8 @@ def _write_derived_stage(source_stage: Path, run_directory: Path) -> Path:
                 '            string robot_model = "nvidia_nova_carter"',
                 '            string Configuration = "Full_Merged"',
                 '            string Physics = "physx"',
+                '            string Sensors = "None"',
+                '            string ROS = "Disabled"',
                 "        }",
                 "    )",
                 "    {",
@@ -116,7 +122,7 @@ def _wait_for_stage(app: object, context: object) -> object:
             stage = context.get_stage()
             if stage is not None:
                 return stage
-    raise RuntimeError("mine stage did not finish loading within 300 seconds")
+    raise RuntimeError("Isaac stage did not finish loading within 300 seconds")
 
 
 def _as_pose(rover: object) -> list[float]:
@@ -237,6 +243,13 @@ def _displacement(before: dict[str, list[float]], after: dict[str, list[float]])
     )
 
 
+def _position_error(position: list[float], expected: list[float]) -> float:
+    return sum(
+        (actual - target) ** 2
+        for actual, target in zip(position, expected, strict=True)
+    ) ** 0.5
+
+
 def _write_standard_artifacts(
     run_directory: Path,
     experiment: MineRoverExperiment,
@@ -247,20 +260,24 @@ def _write_standard_artifacts(
     beam_displacement_m: float,
     structural_collapse: bool,
     camera_frames: dict[str, list[Path]],
+    failure_zone: str,
+    task: str,
+    failure_type: str,
+    preferred_camera_role: str,
 ) -> None:
     scenario = {
-        "environment": "mine_v1",
+        "environment": experiment.world_id,
         "scenario_id": experiment.run_id,
-        "task": "mine_roof_support_contact",
+        "task": task,
         "seed": experiment.seed,
         "parameters": {
-            "failure_zone": "roof_support",
+            "failure_zone": failure_zone,
             "rover_linear_velocity_mps": experiment.drive.linear_velocity_mps,
             "control_steps": experiment.drive.control_steps,
         },
-        "hazards": {"structural_collapse": True},
+        "hazards": {failure_type: True},
     }
-    preferred_frames = camera_frames.get(REACTOR_SEED_CAMERA_ROLE, [])
+    preferred_frames = camera_frames.get(preferred_camera_role, [])
     evidence_refs = [str(path) for path in preferred_frames]
     sensor_streams = {
         role: [str(path) for path in paths] for role, paths in camera_frames.items()
@@ -268,7 +285,7 @@ def _write_standard_artifacts(
     result = {
         "task_success": True,
         "environmental_failure": structural_collapse,
-        "failure_type": "structural_collapse" if structural_collapse else None,
+        "failure_type": failure_type if structural_collapse else None,
         "severity": "high" if structural_collapse else "none",
         "terminal": structural_collapse,
         "evidence_refs": evidence_refs,
@@ -284,7 +301,7 @@ def _write_standard_artifacts(
     metadata = {
         "run_id": experiment.run_id,
         "backend": "isaac_sim",
-        "world_id": "mine_v1",
+        "world_id": experiment.world_id,
         "robot": "NVIDIA Nova Carter",
         "actuation": "wheel velocity targets",
     }
@@ -313,7 +330,7 @@ def _write_standard_artifacts(
                     "sensor_streams": {role: refs[-1:] for role, refs in sensor_streams.items()},
                 },
                 "events": (
-                    [{"event_type": "structural_collapse", "severity": "high"}]
+                    [{"event_type": failure_type, "severity": "high"}]
                     if structural_collapse
                     else []
                 ),
@@ -403,6 +420,31 @@ def _save_rgb(data: object, output: Path) -> None:
 def main() -> int:
     args = _arguments()
     _require(args.stage.is_file(), f"mine stage does not exist: {args.stage}")
+    manifest_path = args.stage.parent / "manifest.json"
+    _require(manifest_path.is_file(), f"mine manifest does not exist: {manifest_path}")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    world_id = manifest.get("world_id")
+    _require(isinstance(world_id, str) and world_id.strip(), "mine manifest has no world_id")
+    failure_zones = manifest.get("failure_zones", {})
+    _require(
+        args.failure_zone in failure_zones,
+        f"failure zone {args.failure_zone!r} is not declared by {manifest_path}",
+    )
+    zone = failure_zones[args.failure_zone]
+    support_path = zone.get("support")
+    falling_body_path = zone.get("primary_falling_body") or zone.get("beam")
+    _require(isinstance(support_path, str), "failure zone has no support prim")
+    _require(isinstance(falling_body_path, str), "failure zone has no primary falling body")
+    witness_config = zone.get("witness_camera", {})
+    tracking_config = zone.get("tracking_camera", {})
+    witness_camera_path = witness_config.get("prim", WITNESS_CAMERA_PATH)
+    preferred_camera_role = zone.get(
+        "reactor_seed_camera_role", REACTOR_SEED_CAMERA_ROLE
+    )
+    _require(
+        preferred_camera_role in {"ego", "tracking", "witness"},
+        "reactor seed camera role must be ego, tracking, or witness",
+    )
     _require(args.wheel_radius_m > 0 and args.wheel_base_m > 0, "wheel dimensions must be positive")
     _require(args.capture_every > 0, "capture-every must be positive")
     run_id = args.run_id or str(uuid4())
@@ -412,6 +454,7 @@ def main() -> int:
         drive=RoverDriveCommand(
             args.linear_velocity_mps, args.angular_velocity_radps, args.control_steps
         ),
+        world_id=world_id,
         camera_resolution=(args.camera_height, args.camera_width),
         camera_tick_rate_hz=args.camera_tick_rate_hz,
     )
@@ -468,6 +511,8 @@ def main() -> int:
         selected_variants = [
             f"{ROVER_PRIM_PATH}:Configuration=Full_Merged",
             f"{ROVER_PRIM_PATH}:Physics=physx",
+            f"{ROVER_PRIM_PATH}:Sensors=None",
+            f"{ROVER_PRIM_PATH}:ROS=Disabled",
         ]
         resolved_variants = _rover_variant_snapshot(robot_prim)
         print(
@@ -486,16 +531,25 @@ def main() -> int:
                 if prim.IsA(UsdGeom.Gprim):
                     semantics_utils.add_labels(prim, labels="nova_carter")
             semantics_utils.add_labels(articulation_root, labels="nova_carter")
-            for prim_path, label in (
-                ("/World/FailureZones/RoofSupportZone/SupportPrimary/CollisionAndVisual", "roof_support"),
-                ("/World/FailureZones/RoofSupportZone/BeamPrimary/CollisionAndVisual", "roof_beam"),
-            ):
-                semantics_utils.add_labels(prim_path, labels=label)
+            semantic_targets = zone.get("semantic_targets") or [
+                {
+                    "prim": f"{support_path}/CollisionAndVisual",
+                    "label": "roof_support",
+                },
+                {
+                    "prim": f"{falling_body_path}/CollisionAndVisual",
+                    "label": "roof_beam",
+                },
+            ]
+            for target in semantic_targets:
+                semantics_utils.add_labels(target["prim"], labels=target["label"])
             fill_light = UsdLux.SphereLight.Define(stage, "/World/Sensors/RoverEvidenceFill")
-            fill_light.CreateIntensityAttr(4500.0)
-            fill_light.CreateRadiusAttr(0.18)
+            fill_light.CreateIntensityAttr(float(zone.get("fill_light_intensity", 4500.0)))
+            fill_light.CreateRadiusAttr(float(zone.get("fill_light_radius_m", 0.18)))
             fill_light.CreateColorAttr(Gf.Vec3f(0.62, 0.72, 1.0))
-            UsdGeom.Xformable(fill_light).AddTranslateOp().Set(Gf.Vec3d(24.0, -2.5, 2.5))
+            UsdGeom.Xformable(fill_light).AddTranslateOp().Set(
+                Gf.Vec3d(*zone.get("fill_light_xyz_m", [24.0, -2.5, 2.5]))
+            )
         import omni.timeline
 
         timeline = omni.timeline.get_timeline_interface()
@@ -523,8 +577,7 @@ def main() -> int:
             [[left_velocity] * len(left_dofs) + [right_velocity] * len(right_dofs)],
             dtype=np.float32,
         )
-        manifest = json.loads((args.stage.parent / "manifest.json").read_text(encoding="utf-8"))
-        start_pose = manifest["failure_zones"][args.failure_zone]["experiment_start_pose"]
+        start_pose = zone["experiment_start_pose"]
         rover.set_world_poses(
             positions=np.array([start_pose["position_xyz_m"]], dtype=np.float32),
             orientations=np.array([start_pose["orientation_quaternion_wxyz"]], dtype=np.float32),
@@ -533,8 +586,8 @@ def main() -> int:
         for _ in range(30):
             rover.set_dof_velocity_targets(zero_targets, dof_indices=wheel_indices)
             app.update()
-        beam = RigidPrim("/World/FailureZones/RoofSupportZone/BeamPrimary")
-        support = RigidPrim("/World/FailureZones/RoofSupportZone/SupportPrimary")
+        beam = RigidPrim(falling_body_path)
+        support = RigidPrim(support_path)
         camera_sensors: dict[str, object] = {}
         camera_prims: dict[str, object] = {}
         camera_pose_timeline: list[dict[str, object]] = []
@@ -547,9 +600,14 @@ def main() -> int:
             rover_position, rover_orientation = _world_pose(rover)
             ego_eye = rover_position + _rotate_vector(rover_orientation, (0.0, 0.0, 1.65))
             ego_target = ego_eye + _rotate_vector(rover_orientation, (5.0, 0.0, -0.25))
-            tracking_eye = rover_position + _rotate_vector(rover_orientation, (-2.1, 0.0, 3.5))
-            tracking_target = rover_position.copy()
-            tracking_target[2] = 1.15
+            tracking_eye = rover_position + _rotate_vector(
+                rover_orientation,
+                tracking_config.get("eye_offset_robot_xyz_m", (-2.1, 0.0, 3.5)),
+            )
+            tracking_target = rover_position + _rotate_vector(
+                rover_orientation,
+                tracking_config.get("target_offset_robot_xyz_m", (0.0, 0.0, 1.15)),
+            )
             initial_poses = {
                 "ego": (EGO_CAMERA_PATH, *_look_at_pose(ego_eye, ego_target)),
                 "tracking": (
@@ -557,8 +615,11 @@ def main() -> int:
                     *_look_at_pose(tracking_eye, tracking_target),
                 ),
                 "witness": (
-                    WITNESS_CAMERA_PATH,
-                    *_look_at_pose((27.0, -3.3, 3.0), (24.0, -0.3, 1.4)),
+                    witness_camera_path,
+                    *_look_at_pose(
+                        witness_config.get("eye_xyz_m", (27.0, -3.3, 3.0)),
+                        witness_config.get("target_xyz_m", (24.0, -0.3, 1.4)),
+                    ),
                 ),
             }
             for role, (path, position, orientation) in initial_poses.items():
@@ -572,7 +633,11 @@ def main() -> int:
                     orientations=np.array([orientation], dtype=np.float32),
                     reset_xform_op_properties=True,
                 )
-                focal_length = {"ego": 18.0, "tracking": 12.0, "witness": 24.0}[role]
+                focal_length = {
+                    "ego": 18.0,
+                    "tracking": float(tracking_config.get("focal_length_mm", 12.0)),
+                    "witness": float(witness_config.get("focal_length_mm", 24.0)),
+                }[role]
                 UsdGeom.Camera(stage.GetPrimAtPath(path)).GetFocalLengthAttr().Set(focal_length)
                 camera_prims[role] = camera_prim
                 camera_sensors[role] = CameraSensor(
@@ -593,6 +658,44 @@ def main() -> int:
             "support": _body_state(support),
             "beam": _body_state(beam),
         }
+        stability_tolerances = zone.get("pre_actuation_position_tolerance_m", {})
+        stability_errors = {
+            "rover": _position_error(
+                before["rover"]["position_xyz_m"], start_pose["position_xyz_m"]
+            ),
+            "support": _position_error(
+                before["support"]["position_xyz_m"],
+                zone.get(
+                    "expected_initial_support_position_xyz_m",
+                    before["support"]["position_xyz_m"],
+                ),
+            ),
+            "primary_falling_body": _position_error(
+                before["beam"]["position_xyz_m"],
+                zone.get(
+                    "expected_initial_falling_body_position_xyz_m",
+                    before["beam"]["position_xyz_m"],
+                ),
+            ),
+        }
+        pre_actuation_stability_gate = {
+            "passed": all(
+                stability_errors[role]
+                <= float(stability_tolerances.get(role, float("inf")))
+                for role in stability_errors
+            ),
+            "position_error_m": stability_errors,
+            "position_tolerance_m": stability_tolerances,
+            "criterion": (
+                "After 30 zero-command settling steps, rover, support, and primary falling "
+                "body must remain within manifest-declared position tolerances."
+            ),
+        }
+        _require(
+            pre_actuation_stability_gate["passed"],
+            "pre-actuation stability gate failed: "
+            + json.dumps(pre_actuation_stability_gate, sort_keys=True),
+        )
         camera_frames: dict[str, list[Path]] = {
             role: [] for role in ("ego", "tracking", "witness")
         }
@@ -608,10 +711,13 @@ def main() -> int:
                     rover_orientation, (5.0, 0.0, -0.25)
                 )
                 desired_eye = rover_position + _rotate_vector(
-                    rover_orientation, (-2.1, 0.0, 3.5)
+                    rover_orientation,
+                    tracking_config.get("eye_offset_robot_xyz_m", (-2.1, 0.0, 3.5)),
                 )
-                desired_target = rover_position.copy()
-                desired_target[2] = 1.15
+                desired_target = rover_position + _rotate_vector(
+                    rover_orientation,
+                    tracking_config.get("target_offset_robot_xyz_m", (0.0, 0.0, 1.15)),
+                )
                 tracking_eye = 0.88 * tracking_eye + 0.12 * desired_eye
                 tracking_target = 0.88 * tracking_target + 0.12 * desired_target
                 moving_poses = {
@@ -670,7 +776,8 @@ def main() -> int:
         beam_vertical_drop_m = (
             before["beam"]["position_xyz_m"][2] - after["beam"]["position_xyz_m"][2]
         )
-        structural_collapse = beam_vertical_drop_m > 0.8
+        collapse_threshold_m = float(zone.get("collapse_threshold_m", 0.8))
+        structural_collapse = beam_vertical_drop_m > collapse_threshold_m
         timeline.stop()
         session_path = run_directory / "mine_rover_session.usda"
         session_layer.Export(str(session_path))
@@ -689,8 +796,8 @@ def main() -> int:
             )
             for role, samples in semantic_visibility.items()
         }
-        tracking_content_passed = bool(camera_frames["tracking"]) and all(
-            item["passed"] for item in visual_quality["tracking"]
+        preferred_content_passed = bool(camera_frames[preferred_camera_role]) and all(
+            item["passed"] for item in visual_quality[preferred_camera_role]
         )
         tracking_label_text = " ".join(semantic_labels_by_role["tracking"]).casefold()
         witness_label_text = " ".join(semantic_labels_by_role["witness"]).casefold()
@@ -713,19 +820,24 @@ def main() -> int:
             <= 6.0
             for index, sample in enumerate(tracking_pose_samples)
         )
+        required_labels = zone.get(
+            "required_semantic_labels",
+            {"tracking": "roof_support", "witness": "roof_beam"},
+        )
         tracking_semantics_passed = (
-            "roof_support" in tracking_label_text and "roof_beam" in witness_label_text
+            str(required_labels["tracking"]).casefold() in tracking_label_text
+            and str(required_labels["witness"]).casefold() in witness_label_text
         )
         visual_evidence_gate = {
             "passed": (
-                tracking_content_passed
+                preferred_content_passed
                 and tracking_semantics_passed
                 and rover_geometric_visibility
             ),
-            "preferred_role": REACTOR_SEED_CAMERA_ROLE,
-            "content_passed": tracking_content_passed,
+            "preferred_role": preferred_camera_role,
+            "content_passed": preferred_content_passed,
             "semantic_visibility_passed": tracking_semantics_passed,
-            "required_semantic_labels": ["roof_support", "roof_beam"],
+            "required_semantic_labels": list(required_labels.values()),
             "observed_labels_by_role": semantic_labels_by_role,
             "rover_geometric_visibility_passed": rover_geometric_visibility,
             "rover_visibility_method": (
@@ -736,21 +848,30 @@ def main() -> int:
         }
         if camera_sensors:
             _require(camera_frames["tracking"], "tracking camera did not produce an RGB frame")
+            _require(
+                camera_frames[preferred_camera_role],
+                f"{preferred_camera_role} camera did not produce a Reactor seed frame",
+            )
             seed_manifest = write_reactor_seed_manifest(
                 run_directory,
                 experiment,
-                seed_image=camera_frames["tracking"][0],
+                seed_image=camera_frames[preferred_camera_role][0],
                 source_stage=args.stage.resolve(),
                 session_layer=session_path,
                 rover_pose_before=rover_pose_before,
                 rover_pose_after=rover_pose_after,
-                camera_prim=TRACKING_CAMERA_PATH,
-                camera_role=REACTOR_SEED_CAMERA_ROLE,
+                camera_prim={
+                    "ego": EGO_CAMERA_PATH,
+                    "tracking": TRACKING_CAMERA_PATH,
+                    "witness": witness_camera_path,
+                }[preferred_camera_role],
+                camera_role=preferred_camera_role,
                 visual_quality={
-                    **visual_quality["tracking"][0],
-                    "semantic_visibility": semantic_visibility["tracking"][0],
+                    **visual_quality[preferred_camera_role][0],
+                    "semantic_visibility": semantic_visibility[preferred_camera_role][0],
                     "run_visual_evidence_gate": visual_evidence_gate,
                 },
+                reactor_prompt=zone.get("reactor_prompt"),
             )
         _write_standard_artifacts(
             run_directory,
@@ -761,13 +882,17 @@ def main() -> int:
             beam_displacement_m=beam_displacement_m,
             structural_collapse=structural_collapse,
             camera_frames=camera_frames,
+            failure_zone=args.failure_zone,
+            task=zone.get("task", "mine_roof_support_contact"),
+            failure_type=zone.get("failure_type", "structural_collapse"),
+            preferred_camera_role=preferred_camera_role,
         )
         camera_streams = {
             role: {
                 "camera_prim": {
                     "ego": EGO_CAMERA_PATH,
                     "tracking": TRACKING_CAMERA_PATH,
-                    "witness": WITNESS_CAMERA_PATH,
+                    "witness": witness_camera_path,
                 }[role],
                 "camera_role": role,
                 "resolution_height_width": list(experiment.camera_resolution),
@@ -786,22 +911,26 @@ def main() -> int:
         summary = {
             "run_id": run_id,
             "backend": "isaac_sim",
-            "world_id": "mine_v1",
+            "world_id": experiment.world_id,
             "source_stage": str(args.stage.resolve()),
             "derived_entry_stage": str(derived_stage),
             "session_layer": str(session_path),
-            "camera_prim": TRACKING_CAMERA_PATH,
+            "camera_prim": {
+                "ego": EGO_CAMERA_PATH,
+                "tracking": TRACKING_CAMERA_PATH,
+                "witness": witness_camera_path,
+            }[preferred_camera_role],
             "camera_status": "disabled for physics diagnostic"
             if not camera_sensors
             else "captured synchronized ego, tracking, and witness RTX RGB streams",
             "camera_streams": camera_streams,
             "camera_pose_timeline": str(camera_pose_path),
-            "reactor_seed_camera_role": REACTOR_SEED_CAMERA_ROLE,
+            "reactor_seed_camera_role": preferred_camera_role,
             "visual_evidence_gate": visual_evidence_gate,
             "articulation_root": articulation_root,
             "session_only_robot_variants": selected_variants,
             "resolved_rover_variants": resolved_variants,
-            "camera_frames": [str(path) for path in camera_frames[REACTOR_SEED_CAMERA_ROLE]],
+            "camera_frames": [str(path) for path in camera_frames[preferred_camera_role]],
             "camera_frame_count_by_role": {
                 role: len(paths) for role, paths in camera_frames.items()
             },
@@ -816,9 +945,14 @@ def main() -> int:
             "beam_displacement_m": beam_displacement_m,
             "beam_vertical_drop_m": beam_vertical_drop_m,
             "structural_collapse": structural_collapse,
-            "collapse_criterion": "beam vertical drop > 0.8 m",
+            "failure_zone": args.failure_zone,
+            "failure_type": zone.get("failure_type", "structural_collapse")
+            if structural_collapse
+            else None,
+            "collapse_criterion": f"primary falling body vertical drop > {collapse_threshold_m} m",
             "reactor_seed_manifest": str(seed_manifest),
             "source_stage_unchanged": True,
+            "pre_actuation_stability_gate": pre_actuation_stability_gate,
         }
         (run_directory / "summary.json").write_text(
             json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"

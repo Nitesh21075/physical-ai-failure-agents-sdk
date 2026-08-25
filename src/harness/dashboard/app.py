@@ -257,7 +257,7 @@ def create_app(store: ExperimentStore) -> FastAPI:
                 experiment_budget=payload.experiment_budget,
                 model_provider="openai_agents_sdk",
                 model_name=model,
-                capability_version="mine_v1-agents-sdk-v1",
+                capability_version="failure-worlds-agents-sdk-v2",
                 simulator_metadata={"container_image": "nvcr.io/nvidia/isaac-sim:6.0.1"},
             )
             return research.get_campaign(campaign_id) or {}

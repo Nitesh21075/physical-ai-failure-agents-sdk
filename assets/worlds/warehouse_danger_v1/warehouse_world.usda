@@ -1,0 +1,77 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Z"
+    subLayers = [
+        @../mine_v1/layers/physics_defaults.usda@,
+        @../mine_v1/layers/materials.usda@,
+        @layers/lighting.usda@
+    ]
+)
+
+def Xform "World" (
+    kind = "assembly"
+    customData = {
+        string harness_world_id = "warehouse_danger_v1"
+        string harness_authoring_model = "native_openusd_composition"
+        string harness_description = "NVIDIA warehouse-with-forklifts with a contact-driven marginal rack-collapse cell"
+    }
+)
+{
+    over "PhysicsMaterials"
+    {
+        def Material "RackFailureContact" (
+            prepend apiSchemas = ["PhysicsMaterialAPI", "PhysxMaterialAPI"]
+        )
+        {
+            float physics:staticFriction = 0.06
+            float physics:dynamicFriction = 0.04
+            float physics:restitution = 0.02
+            token physxMaterial:frictionCombineMode = "min"
+        }
+    }
+
+    def Xform "Environment" (
+        references = @https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0/Isaac/Environments/Simple_Warehouse/warehouse_with_forklifts.usd@
+        customData = {
+            string harness_role = "native_isaac_environment"
+            string harness_source = "NVIDIA Isaac Sim 6.0 Local Assets Pack"
+        }
+    )
+    {
+        double3 xformOp:translate = (20, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Scope "FailureZones"
+    {
+        def Xform "RackCollapseZone" (
+            references = @hazards/rack_collapse.usda@
+        )
+        {
+        }
+    }
+
+    def Xform "Robot" (
+        customData = {
+            string harness_role = "Nova Carter reference supplied by the run-owned derived layer"
+        }
+    )
+    {
+        double3 xformOp:translate = (0, -1.65, 0.35)
+        quatd xformOp:orient = (0.70710678, 0, 0, 0.70710678)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+    }
+
+    def Scope "Sensors"
+    {
+        def Camera "RackCollapseCamera"
+        {
+            float focalLength = 24
+            float horizontalAperture = 36
+            float verticalAperture = 20.25
+            float2 clippingRange = (0.1, 1000)
+        }
+    }
+}

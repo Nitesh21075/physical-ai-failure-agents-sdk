@@ -1,0 +1,32 @@
+#usda 1.0
+
+over "World"
+{
+    def Scope "DangerLighting"
+    {
+        def SphereLight "HazardFill"
+        {
+            color3f color = (0.72, 0.82, 1.0)
+            float intensity = 75000
+            float radius = 0.65
+            double3 xformOp:translate = (0, -2.8, 3.6)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+        def SphereLight "WarningLight"
+        {
+            color3f color = (1.0, 0.12, 0.03)
+            float intensity = 28000
+            float radius = 0.35
+            double3 xformOp:translate = (0, 1.8, 3.8)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+        def DistantLight "NeutralDaylight"
+        {
+            color3f color = (0.72, 0.80, 1.0)
+            float intensity = 1400
+            float angle = 2.0
+            float3 xformOp:rotateXYZ = (35, -20, -25)
+            uniform token[] xformOpOrder = ["xformOp:rotateXYZ"]
+        }
+    }
+}

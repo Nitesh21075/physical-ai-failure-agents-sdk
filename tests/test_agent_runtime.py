@@ -50,18 +50,31 @@ def test_runs_path_guard(tmp_path: Path) -> None:
         context.require_under_runs(tmp_path / "outside.json")
 
 
-def test_agent_has_only_seven_narrow_tools() -> None:
+def test_agent_has_only_ten_narrow_tools() -> None:
     names = [tool.name for tool in create_researcher("test-model").tools]
     assert names == [
         "get_campaign_state",
+        "inspect_isaac_capabilities",
         "inspect_mine_world",
         "get_recent_experiments",
+        "inspect_isaac_run",
         "run_mine_roof_support_experiment",
+        "run_warehouse_rack_collapse_experiment",
         "prepare_reactor_comparison",
         "get_pair_status",
         "assess_and_compare_pair",
     ]
     assert not {"shell", "python", "docker", "filesystem"}.intersection(names)
+
+
+def test_isaac_world_routes_are_fixed_and_local() -> None:
+    assert MineIsaacToolService.WORLD_ROUTES == {
+        "mine_v1": ("assets/worlds/mine_v1/mine_world.usda", "roof_support"),
+        "warehouse_danger_v1": (
+            "assets/worlds/warehouse_danger_v1/warehouse_world.usda",
+            "rack_collapse",
+        ),
+    }
 
 
 def test_campaign_pair_linkage_is_persistent(tmp_path: Path) -> None:

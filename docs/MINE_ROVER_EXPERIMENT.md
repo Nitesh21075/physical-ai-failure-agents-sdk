@@ -7,8 +7,11 @@ handoff. It does not move the rover chassis directly.
 
 ## Non-destructive boundary
 
-`assets/worlds/mine_v1/mine_world.usda` and every USD it composes are campaign
-inputs. For each run the worker creates:
+The selected entry stage and every USD it composes are experiment inputs. The
+Agents SDK exposes separate allowlisted tools for `mine_v1` and
+`warehouse_danger_v1`; an operator may explicitly pass the bounded
+`mine_v2_subt` prototype with `--stage`.
+For each run the worker creates:
 
 ```text
 runs/isaac-mine/<run-id>/mine_rover_derived_entry.usda  # source-world overlay
@@ -38,13 +41,16 @@ deterministically smoothed and has no collision, rigid body, or physical effect.
 The fixed witness view remains pointed at the support/beam bay.
 
 The tracking stream is the Reactor seed. Pair preparation rejects it unless
-every tracking frame passes measured contrast/range/gradient checks, the
+every tracking frame passes measured exposure/contrast/range/gradient checks, the
 tracking view contains the semantically labelled roof support, the witness view
 contains the semantically labelled beam, and the tracking camera remains within
 the bounded chase distance from the measured rover articulation. Isaac 6.0.1
 does not return the authored class label for NVIDIA's instanced Nova Carter
 visuals, so rover framing uses the measured articulation/camera geometry and
 records that limitation explicitly. No placeholder frame is substituted.
+The exposure gate requires mean luminance at least 12/255 and no more than 65%
+of pixels below 10/255, preventing a high-contrast but nearly black frame from
+being accepted.
 
 ## Run
 
@@ -67,6 +73,16 @@ docker run --rm --gpus all --network host --user 0:0 --entrypoint bash \
 
 Use `--disable-camera` only for an articulation/PhysX diagnostic. It produces
 no RGB image and therefore intentionally produces no Reactor seed.
+
+For `mine_v2_subt`, add:
+
+```text
+--stage /workspace/project/assets/worlds/mine_v2_subt/mine_world.usda
+```
+
+The resulting scenario, summary, and Reactor seed use `mine_v2_subt` as the
+world ID. SubT remains operator-only; the model-visible tools allowlist
+`mine_v1` and `warehouse_danger_v1`.
 
 The first Nova Carter load can take several minutes because the reference asset
 is resolved from NVIDIA's content service. Keep the two cache volumes between

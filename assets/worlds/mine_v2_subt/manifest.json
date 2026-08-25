@@ -1,0 +1,78 @@
+{
+  "world_id": "mine_v2_subt",
+  "entry_stage": "mine_world.usda",
+  "description": "Hybrid perception world using a converted LTU DARPA SubT cave shell and the unchanged mine_v1 roof-support experiment.",
+  "prototype_status": "bounded route accepted in real Isaac Sim 6.0.1 physics and RTX diagnostics",
+  "agent_integration": "not exposed to MineFailureResearcher; the bounded model tool remains on deterministic mine_v1",
+  "composition": {
+    "sublayers": [
+      "../mine_v1/layers/physics_defaults.usda",
+      "../mine_v1/layers/materials.usda",
+      "layers/lighting.usda"
+    ],
+    "referenced_assets": [
+      "sections/subt_cave_shell.usda",
+      "../mine_v1/hazards/roof_support_zone.usda",
+      "../mine_v1/robots/inspection_robot.usda",
+      "vendor/ltu_darpa_subt/cave_world.usdc"
+    ],
+    "references_are_relative": true,
+    "gazebo_physics_imported": false,
+    "gazebo_lighting_imported": false
+  },
+  "source_assets": [
+    {
+      "name": "LTU DARPA SubT cave world",
+      "repository": "https://github.com/LTU-RAI/darpa_subt_worlds",
+      "upstream_repository": "https://github.com/LTU-RAI/gazebo_cave_world",
+      "commit": "a15a1107e638eae090335d2d6f36c623439aaa7f",
+      "source_path": "worlds/models/cave_world/meshes/cave_world.obj",
+      "converted_asset": "vendor/ltu_darpa_subt/cave_world.usdc",
+      "license": "MIT",
+      "license_file": "vendor/ltu_darpa_subt/LICENSE",
+      "provenance": "vendor/ltu_darpa_subt/cave_world.usdc.provenance.json"
+    }
+  ],
+  "static_environment": {
+    "visual_shell": "/World/Environment/SubTCaveShell/ImportedVisual",
+    "collision_route": "/World/Environment/SubTCaveShell/ExperimentRouteFloor",
+    "collision_status": "simplified bounded route proxy; full cave collision mesh intentionally deferred"
+  },
+  "interactive_prims": {
+    "roof_beam": "/World/FailureZones/RoofSupportZone/BeamPrimary",
+    "roof_support": "/World/FailureZones/RoofSupportZone/SupportPrimary",
+    "roof_interaction_target": "/World/FailureZones/RoofSupportZone/InteractionTarget",
+    "roof_push_face": "/World/FailureZones/RoofSupportZone/SupportPrimary/PushFace",
+    "robot": "/World/Robot"
+  },
+  "cameras": {
+    "research": "/World/Sensors/ResearchCamera",
+    "overview": "/World/Sensors/OverviewCamera",
+    "rover_vla": "/World/Robot/VLACamera",
+    "roof_support_zone": "/World/Sensors/RoofSupportCamera"
+  },
+  "failure_zones": {
+    "roof_support": {
+      "root": "/World/FailureZones/RoofSupportZone",
+      "beam": "/World/FailureZones/RoofSupportZone/BeamPrimary",
+      "support": "/World/FailureZones/RoofSupportZone/SupportPrimary",
+      "interaction_target": "/World/FailureZones/RoofSupportZone/InteractionTarget",
+      "camera": "/World/Sensors/RoofSupportCamera",
+      "experiment_start_pose": {
+        "position_xyz_m": [24.0, -1.65, 0.35],
+        "heading": "+Y",
+        "orientation_quaternion_wxyz": [0.70710678, 0.0, 0.0, 0.70710678]
+      },
+      "physics_status": "mine_v2 integrated Nova Carter/PhysX smoke passed at 0.25 m/s for 180 control steps; stable outcome observed",
+      "causal_chain": "Wheel-actuated rover contact displaces SupportPrimary; PhysX gravity/contact determines whether BeamPrimary drops."
+    }
+  },
+  "rover_interactions": {
+    "control_contract": "Use the Nova Carter wheel articulation; never teleport the chassis after initial experiment placement.",
+    "roof_support_push": {
+      "approach": "Start at the manifest pose and drive in positive Y into SupportPrimary/PushFace.",
+      "success_signal": "Measured support translation and beam vertical drop from real PhysX body poses."
+    }
+  },
+  "immutable_base_policy": "Do not write experiments into mine_world.usda, the converted asset, or referenced mine_v1 layers; compose stronger run/session layers."
+}

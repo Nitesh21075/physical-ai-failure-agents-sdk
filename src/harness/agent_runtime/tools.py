@@ -113,6 +113,68 @@ def inspect_mine_world(ctx: ToolContext[AgentRuntimeContext]) -> dict[str, Any]:
 
 
 @function_tool
+def inspect_isaac_capabilities(ctx: ToolContext[AgentRuntimeContext]) -> dict[str, Any]:
+    """Inspect the LLM's bounded Isaac Sim capabilities and executable world catalog.
+
+    This reports what the agent can actually request through tools, not general
+    capabilities available in the Isaac Sim GUI or arbitrary Python scripts.
+    """
+    root = ctx.context.config.project_root
+    worlds: dict[str, Any] = {}
+    for world_id, (stage_relative, default_zone) in sorted(
+        ctx.context.mine_isaac_service.WORLD_ROUTES.items()
+    ):
+        manifest_path = root / Path(stage_relative).parent / "manifest.json"
+        if not manifest_path.is_file():
+            worlds[world_id] = {
+                "status": "unavailable",
+                "reason": f"missing manifest: {manifest_path}",
+            }
+            continue
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        zone = manifest.get("failure_zones", {}).get(default_zone, {})
+        worlds[world_id] = {
+            "status": "executable" if (root / stage_relative).is_file() else "unavailable",
+            "description": manifest.get("description"),
+            "stage": stage_relative,
+            "failure_zone": default_zone,
+            "physics_status": zone.get("physics_status"),
+            "causal_chain": zone.get("causal_chain"),
+            "native_isaac_usd": manifest.get("composition", {}).get(
+                "environment_is_native_isaac_usd"
+            ),
+            "offline_ready": manifest.get("composition", {}).get(
+                "environment_collected_locally"
+            ),
+            "packaging_note": manifest.get("composition", {}).get(
+                "local_packaging_status"
+            ),
+            "presentation_status": manifest.get("composition", {}).get(
+                "presentation_status"
+            ),
+        }
+    return {
+        "executor": "fixed Isaac Sim 6.0.1 Docker runner",
+        "robot": "NVIDIA Nova Carter, wheel-velocity articulation control only",
+        "agent_can": [
+            "inspect declared worlds and prior indexed evidence",
+            "select one of the explicitly allowlisted experiment tools",
+            "choose bounded speed, duration, and seed",
+            "receive measured body poses, collapse metrics, camera gates, and artifact paths",
+            "prepare a Reactor comparison only from a quality-gated real Isaac frame",
+        ],
+        "agent_cannot": [
+            "run arbitrary Python, shell, Docker, or Omniverse commands",
+            "teleport the robot or directly toggle a collapse",
+            "edit USD source stages",
+            "invent frames, contacts, motion, or measurements",
+            "execute more than one new Isaac run per ordinary research step",
+        ],
+        "worlds": worlds,
+    }
+
+
+@function_tool
 def get_recent_experiments(
     ctx: ToolContext[AgentRuntimeContext], limit: int = 5, world_or_zone: str | None = None
 ) -> list[dict[str, Any]]:
@@ -152,31 +214,71 @@ def get_recent_experiments(
 
 
 @function_tool
-async def run_mine_roof_support_experiment(
+def inspect_isaac_run(
+    ctx: ToolContext[AgentRuntimeContext], run_id: str
+) -> dict[str, Any]:
+    """Inspect measured physics and visual-readiness evidence for one indexed Isaac UUID run.
+
+    Paths come only from the authoritative experiment index and must resolve
+    below the configured runs directory. This tool cannot inspect arbitrary
+    files supplied by the model.
+    """
+    try:
+        run_id = str(UUID(run_id))
+    except (TypeError, ValueError) as error:
+        raise ValueError("run_id must be a UUID") from error
+    record = ctx.context.experiment_store.get_experiment(run_id)
+    if record is None or record["backend"] != "isaac_sim":
+        raise KeyError(f"indexed Isaac run is unavailable: {run_id}")
+    if not record.get("run_directory"):
+        raise FileNotFoundError("indexed Isaac run has no artifact directory")
+    run_directory = ctx.context.require_under_runs(record["run_directory"])
+    summary_path = run_directory / "summary.json"
+    if not summary_path.is_file():
+        raise FileNotFoundError(f"Isaac summary is unavailable: {summary_path}")
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    return {
+        "run_id": run_id,
+        "world_id": summary.get("world_id"),
+        "failure_zone": summary.get("failure_zone"),
+        "parameters": record["scenario"].get("parameters", {}),
+        "environmental_failure": record["evaluation"].get("environmental_failure"),
+        "failure_type": record["evaluation"].get("failure_type"),
+        "physics_metrics": record["evaluation"].get("metrics", {}),
+        "pre_actuation_stability_gate": summary.get("pre_actuation_stability_gate"),
+        "visual_evidence_gate": summary.get("visual_evidence_gate"),
+        "camera_frame_count_by_role": summary.get("camera_frame_count_by_role", {}),
+        "rover_pose_before": summary.get("rover_pose_before"),
+        "rover_pose_after": summary.get("rover_pose_after"),
+        "source_stage_unchanged": summary.get("source_stage_unchanged"),
+        "reactor_seed_available": bool(summary.get("reactor_seed_manifest")),
+    }
+
+
+async def _run_bounded_isaac_world(
     ctx: ToolContext[AgentRuntimeContext],
+    *,
+    world_id: str,
     rover_linear_velocity_mps: float,
     control_steps: int,
     seed: int,
 ) -> dict[str, Any]:
-    """Run one real Isaac Sim 6.0.1 Nova Carter roof-support experiment.
-
-    The rover is initially placed at the manifest-declared start pose, then
-    moves only through actual wheel velocity targets. Valid speed is 0.1 to
-    0.8 m/s; valid control_steps is 60 to 900. This is expensive and limited
-    to one call per top-level research step. Inspect the world and recent
-    experiments before selecting parameters.
-    """
     local = ctx.context
     local.mine_isaac_service._validate(rover_linear_velocity_mps, control_steps, seed)
     previous = local.experiment_store.list_experiments()
     signature = {
+        "world_id": world_id,
         "rover_linear_velocity_mps": float(rover_linear_velocity_mps),
         "control_steps": control_steps,
         "seed": seed,
     }
     for record in previous:
         parameters = record["scenario"].get("parameters", {})
-        existing = {**parameters, "seed": record["scenario"].get("seed")}
+        existing = {
+            **parameters,
+            "world_id": record["scenario"].get("environment"),
+            "seed": record["scenario"].get("seed"),
+        }
         if record["backend"] == "isaac_sim" and all(
             existing.get(key) == value for key, value in signature.items()
         ):
@@ -195,6 +297,7 @@ async def run_mine_roof_support_experiment(
             rover_linear_velocity_mps=float(rover_linear_velocity_mps),
             control_steps=control_steps,
             seed=seed,
+            world_id=world_id,
         )
         local.campaign_store.record_isaac_run(iteration_id, result["run_id"])
         local.campaign_store.transition_iteration(iteration_id, IterationState.RECORDED)
@@ -204,6 +307,51 @@ async def run_mine_roof_support_experiment(
             iteration_id, IterationState.FAILED, error=str(error)[:1000]
         )
         raise
+
+
+@function_tool
+async def run_mine_roof_support_experiment(
+    ctx: ToolContext[AgentRuntimeContext],
+    rover_linear_velocity_mps: float,
+    control_steps: int,
+    seed: int,
+) -> dict[str, Any]:
+    """Run one real Isaac Sim 6.0.1 Nova Carter roof-support experiment.
+
+    The rover moves only through wheel velocity targets. Valid speed is 0.1
+    to 0.8 m/s and control_steps is 60 to 900. The call is expensive and uses
+    the ordinary one-Isaac-run-per-research-step budget.
+    """
+    return await _run_bounded_isaac_world(
+        ctx,
+        world_id="mine_v1",
+        rover_linear_velocity_mps=rover_linear_velocity_mps,
+        control_steps=control_steps,
+        seed=seed,
+    )
+
+
+@function_tool
+async def run_warehouse_rack_collapse_experiment(
+    ctx: ToolContext[AgentRuntimeContext],
+    rover_linear_velocity_mps: float,
+    control_steps: int,
+    seed: int,
+) -> dict[str, Any]:
+    """Run one real native-USD warehouse rack-collapse experiment in Isaac Sim 6.0.1.
+
+    Nova Carter starts at the declared danger-cell approach pose and moves only
+    through wheel velocity targets toward the marginal rack support. Valid
+    speed is 0.1 to 0.8 m/s and control_steps is 60 to 900. PhysX determines
+    whether the loaded beam falls; the tool does not toggle or animate failure.
+    """
+    return await _run_bounded_isaac_world(
+        ctx,
+        world_id="warehouse_danger_v1",
+        rover_linear_velocity_mps=rover_linear_velocity_mps,
+        control_steps=control_steps,
+        seed=seed,
+    )
 
 
 def _validated_pair_id(pair_id: str) -> str:
@@ -424,9 +572,12 @@ async def assess_and_compare_pair(
 
 AGENT_TOOLS = [
     get_campaign_state,
+    inspect_isaac_capabilities,
     inspect_mine_world,
     get_recent_experiments,
+    inspect_isaac_run,
     run_mine_roof_support_experiment,
+    run_warehouse_rack_collapse_experiment,
     prepare_reactor_comparison,
     get_pair_status,
     assess_and_compare_pair,

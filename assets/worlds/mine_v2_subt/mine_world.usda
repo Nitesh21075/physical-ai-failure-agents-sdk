@@ -1,0 +1,96 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Z"
+    subLayers = [
+        @../mine_v1/layers/physics_defaults.usda@,
+        @../mine_v1/layers/materials.usda@,
+        @layers/lighting.usda@
+    ]
+)
+
+def Xform "World" (
+    kind = "assembly"
+    customData = {
+        string harness_world_id = "mine_v2_subt"
+        string harness_authoring_model = "hybrid_composed_usd"
+        string harness_description = "LTU SubT perception shell with retained bounded roof-support experiment"
+    }
+)
+{
+    def Xform "Environment" (
+        customData = {
+            string harness_role = "static_environment"
+        }
+    )
+    {
+        def Xform "SubTCaveShell" (
+            references = @sections/subt_cave_shell.usda@
+        )
+        {
+        }
+    }
+
+    def Scope "FailureZones"
+    {
+        def Xform "RoofSupportZone" (
+            references = @../mine_v1/hazards/roof_support_zone.usda@
+            customData = {
+                string harness_reuse_policy = "Referenced unchanged from mine_v1; experiments write stronger run/session layers."
+            }
+        )
+        {
+        }
+    }
+
+    def Xform "Robot" (
+        references = @../mine_v1/robots/inspection_robot.usda@
+        customData = {
+            string harness_role = "nvidia_nova_carter_or_authored_proxy"
+        }
+    )
+    {
+    }
+
+    def Scope "Sensors"
+    {
+        def Camera "ResearchCamera"
+        {
+            float focalLength = 26
+            float horizontalAperture = 36
+            float verticalAperture = 20.25
+            float2 clippingRange = (0.1, 1000)
+            double3 xformOp:translate = (15, -11, 6.5)
+            float3 xformOp:rotateXYZ = (67, 0, 48)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        }
+
+        def Camera "OverviewCamera"
+        {
+            float focalLength = 20
+            float horizontalAperture = 36
+            float verticalAperture = 20.25
+            float2 clippingRange = (0.1, 1000)
+            double3 xformOp:translate = (22, -14, 8)
+            float3 xformOp:rotateXYZ = (65, 0, 42)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        }
+
+        def Camera "RoofSupportCamera" (
+            customData = {
+                string harness_role = "failure_zone_research_camera"
+                string harness_failure_zone = "/World/FailureZones/RoofSupportZone"
+            }
+        )
+        {
+            float focalLength = 24
+            float horizontalAperture = 36
+            float verticalAperture = 20.25
+            float2 clippingRange = (0.1, 1000)
+            double3 xformOp:translate = (27, -3.3, 3)
+            float3 xformOp:rotateXYZ = (70, 0, 48)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        }
+    }
+}

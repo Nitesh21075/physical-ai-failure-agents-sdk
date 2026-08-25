@@ -1,6 +1,6 @@
 # MineFailureResearcher: authoritative runtime context
 
-Last updated: 2026-08-24. This is the source of truth for the current codebase,
+Last updated: 2026-08-25. This is the source of truth for the current codebase,
 including the architecture explanation, operator flow, and acceptance status.
 The former Responses-driven proposal runtime, generic environment abstraction,
 primitive Isaac worker, mock agents, and historical planning documents were
@@ -10,7 +10,7 @@ removed after their retained dependencies were separated.
 
 Yes, within the precise meaning of a bounded tool-using agent. An OpenAI model
 receives the research instruction, persistent session history, agent rules, and
-seven tool schemas. The official Agents SDK `Runner` performs the model → tool
+ten tool schemas. The official Agents SDK `Runner` performs the model → tool
 → model loop. The host does **not** select a fixed tool sequence.
 
 The model makes the open-ended decisions: what evidence to inspect, whether a
@@ -44,23 +44,25 @@ Its exact instruction text is:
 
 > You are MineFailureResearcher, one experiment-level researcher.
 >
-> Investigate environmental failure behavior in mine_v1 and identify interesting agreement or disagreement between Isaac/PhysX and Reactor.
+> Investigate environmental failure behavior in the allowlisted Isaac worlds and identify interesting agreement or disagreement between Isaac/PhysX and Reactor. The worlds currently include the deterministic mine_v1 regression world and the native-USD warehouse_danger_v1 demonstration world.
 >
 > Rules:
-> 1. Before claiming anything about the world, inspect the mine and/or existing experiment evidence with tools.
+> 1. Before claiming anything about Isaac capabilities or a world, inspect the capability catalog, relevant world manifest, and/or existing experiment evidence with tools.
 > 2. Never claim a physical outcome without an actual Isaac tool result.
 > 3. Never claim a Reactor outcome without actual recorded Reactor evidence.
 > 4. Isaac is a physics-grounded simulation reference, not real-world truth.
 > 5. Reactor is neural-world visual evidence, not physical ground truth.
 > 6. A disagreement is only a CANDIDATE DISCREPANCY.
 > 7. Never fabricate experiments, files, frames, tool outputs, or measurements.
-> 8. Prefer information-gaining experiments over arbitrary destruction and search near failure boundaries when possible.
+> 8. Prefer information-gaining experiments over arbitrary destruction and search near failure boundaries when possible. Prefer warehouse_danger_v1 when the user asks for the polished danger demonstration; retain mine_v1 for regression research.
 > 9. In one top-level research step, execute at most one new Isaac experiment unless the user explicitly authorizes a separate multi-experiment mode.
 > 10. Inspect previous experiments before selecting a new experiment. Do not repeat a parameter configuration without stating a scientific reason.
 > 11. If Reactor evidence is needed but not captured, prepare the paired Reactor experiment and stop with status waiting_for_reactor.
 > 12. When a paired recording is available on a later turn, inspect its status, assess and compare it with tools, then formulate the next hypothesis.
 > 13. Do not reveal hidden chain-of-thought. Return only the structured concise hypothesis, evidence summary, and next-step rationale.
 > 14. Treat tool errors and unavailable capabilities honestly. Never translate an authored or intended behavior into observed evidence.
+> 15. Treat offline asset readiness separately from physics readiness. A native remote USD that has not been collected locally is not offline-ready.
+> 16. Treat an automated pixel/semantic gate separately from human presentation readiness. If the capability catalog says art-direction acceptance is pending, do not call that world recording-ready.
 
 ## Exact end-to-end call graph
 
@@ -94,16 +96,19 @@ Official SDK-owned reasoning/tool loop
        +--> model may inspect campaign
        |    [agent_runtime/tools.py:get_campaign_state]
        |
-       +--> model may inspect verified world capabilities
+       +--> model may inspect verified Isaac/world capabilities
+       |    [agent_runtime/tools.py:inspect_isaac_capabilities]
        |    [agent_runtime/tools.py:inspect_mine_world]
-       |    [assets/worlds/mine_v1/manifest.json]
+       |    [assets/worlds/*/manifest.json]
        |
        +--> model may inspect compact prior evidence
        |    [agent_runtime/tools.py:get_recent_experiments]
+       |    [agent_runtime/tools.py:inspect_isaac_run]
        |    [persistence/store.py:ExperimentStore]
        |
        +--> model may request one real bounded Isaac run
        |    [agent_runtime/tools.py:run_mine_roof_support_experiment]
+       |    [agent_runtime/tools.py:run_warehouse_rack_collapse_experiment]
        |    -> bounds + per-turn budget [AgentRuntimeContext.claim_isaac_budget]
        |    -> fixed service [agent_runtime/isaac_service.py:MineIsaacToolService.run]
        |    -> fixed Docker command [/isaac-sim/python.sh]
@@ -161,15 +166,18 @@ result = await Runner.run(
 
 ## Model-visible tools
 
-Only these seven functions are exposed:
+Only these ten functions are exposed:
 
 1. `get_campaign_state`
-2. `inspect_mine_world`
-3. `get_recent_experiments`
-4. `run_mine_roof_support_experiment`
-5. `prepare_reactor_comparison`
-6. `get_pair_status`
-7. `assess_and_compare_pair`
+2. `inspect_isaac_capabilities`
+3. `inspect_mine_world`
+4. `get_recent_experiments`
+5. `inspect_isaac_run`
+6. `run_mine_roof_support_experiment`
+7. `run_warehouse_rack_collapse_experiment`
+8. `prepare_reactor_comparison`
+9. `get_pair_status`
+10. `assess_and_compare_pair`
 
 There is no shell, arbitrary Python, generic file writer, Codex tool,
 unrestricted Docker, arbitrary path, or unrestricted Omniverse tool.
@@ -187,8 +195,10 @@ unrestricted Docker, arbitrary path, or unrestricted Omniverse tool.
   coordinator remains.
 - `media/`: real Isaac frame/video export and Reactor media normalization.
 - `dashboard/`: existing evidence UI plus minimal agent controls.
-- `mine_world.py`, `assets/worlds/mine_v1/`, and the two mine scripts: world
-  validation and the physical experiment.
+- `mine_world.py`, `assets/worlds/mine_v1/`,
+  `assets/worlds/warehouse_danger_v1/`, `assets/worlds/mine_v2_subt/`, and the
+  experiment scripts: deterministic regression world, native warehouse danger
+  demo, separate SubT perception prototype, validation, and physical runs.
 
 ## Dashboard and data routes
 
@@ -216,7 +226,7 @@ token counts.
 
 ## Validation status
 
-Post-cleanup evidence collected on 2026-08-24:
+Post-cleanup evidence collected on 2026-08-24 and 2026-08-25:
 
 | Acceptance boundary | Result | Evidence |
 |---|---|---|
@@ -232,7 +242,22 @@ Post-cleanup evidence collected on 2026-08-24:
 | Real Reactor pair | PASS | Campaign `26d90a6c-f2d3-41f6-9a45-73798fe38c4c`; pair `b67ac8dd-62b5-4ba5-a532-16c913bc0ca3`; real browser/WebRTC run `3066ccb8-7019-4b31-b505-c9dada522729`; 2,432,837-byte WebM decodes at 1664×960 |
 | Resume after a completed Reactor capture | PASS | A new CLI process reused the same campaign/SQLite session; trace `trace_15363940233b4d57b0fb2b860e50e57d` shows `get_pair_status` then `assess_and_compare_pair`; result was honestly `inconclusive`/`needs_human_review` |
 | Second evidence-driven research iteration | SKIPPED | The cost-bounded E2E campaign authorized exactly one experiment. The resumed agent proposed a different 600-step experiment based on the evidence, but the exhausted budget correctly prevented execution |
-| Negative tool boundaries | PASS | Direct validation rejects speeds outside 0.1–0.8 before Docker; a second budget claim is rejected; only seven tools exist; a real malicious-shell prompt returned `blocked` after campaign inspection and had no shell to call |
+| Historical negative tool boundaries | PASS | The pre-warehouse seven-tool acceptance rejected invalid speed, a second budget claim, and a real malicious-shell prompt. The current ten-tool surface remains bounded and has unit coverage; the live malicious-prompt acceptance has not been repeated after adding the catalog, run-inspection, and warehouse tools. |
+| `mine_v2_subt` bounded physics | PASS | Real Isaac Sim 6.0.1 run `mine-v2-subt-physics-20260824`; Nova wheel targets moved Y −1.650 → −0.841 m at 0.25 m/s over 180 steps; support displacement 0.00875 m and effectively zero beam drop established a stable outcome |
+| `mine_v2_subt` RTX/camera | PASS | Real run `mine-v2-subt-camera-lit-20260824`; synchronized ego/tracking/witness frames, support/beam semantic visibility, bounded tracking geometry, and stricter exposure/content gate all passed; tracking mean luminance 35.35/255 |
+| Native warehouse danger stage and stability gate | PASS | Isaac Sim 6.0.1 composed NVIDIA's native warehouse USD with the local rack-collapse annex. Run `warehouse-danger-safe-spawn-physics-20260825` passed the stability gate and remained stable at 0.25 m/s for 180 steps under the earlier, wider support geometry. A stable-side point for the final geometry remains pending. |
+| Warehouse rack-collapse physics | PASS | Run `warehouse-danger-collapse-physics-20260825` passed the pre-actuation gate; at 0.8 m/s for 450 steps the support moved 2.918 m and the loaded beam dropped 2.937 m, exceeding the 0.8 m collapse threshold. |
+| Warehouse RTX/camera before final geometry revision | PASS | Run `warehouse-danger-final-20260825` produced 11 frames for each of ego/tracking/witness and passed exposure, content, semantics, and tracking-geometry gates. It remained stable; the preferred Reactor seed has since been changed to the clearer witness role and the support geometry narrowed. |
+| Revised warehouse collapse plus cameras | TECHNICAL PASS, PRESENTATION FAIL | Combined run `warehouse-danger-collapse-camera-20260825` passed pre-actuation stability and the automated visual gate, captured 31 synchronized frames per role, and measured a 2.936 m beam drop. Human frame review found the witness view overlit and visually sparse with little of the native warehouse visible; it is not yet a worthwhile recording shot. |
+| Live Agents SDK selection of warehouse tool | PENDING | The ten-tool surface and route have unit coverage, but a real model-driven call of `run_warehouse_rack_collapse_experiment` has not yet been accepted. |
+
+`mine_v2_subt` is a distinct hybrid stage, not a replacement for `mine_v1`.
+It vendors a hash-pinned MIT-licensed LTU cave conversion, reuses the existing
+Nova Carter and roof-support USD layers, authors RTX lighting independently of
+Gazebo, and provides a simplified collider only for the bounded experiment
+route. The full cave mesh is visual-only, so wider traversal is not yet a
+physics-backed capability. `mine_v2_subt` remains operator-only; the ten
+model-visible tools allowlist `mine_v1` and `warehouse_danger_v1`.
 
 The completed live E2E exposed and fixed two browser timing defects: the page
 now waits until the Reactor SDK reports transport status `ready` before upload,

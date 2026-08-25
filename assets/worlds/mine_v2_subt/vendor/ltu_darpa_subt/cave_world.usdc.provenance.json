@@ -1,0 +1,21 @@
+{
+  "converted_asset": "cave_world.usdc",
+  "converted_sha256": "d4253ef58d6ac16c3215c47b38bfaec4c0a345995992bc22f967c033c1469f27",
+  "converter": "Isaac Sim 6.0.1 omni.kit.asset_converter",
+  "gazebo_physics_or_lighting_imported": false,
+  "materials_loaded": true,
+  "source_commit": "a15a1107e638eae090335d2d6f36c623439aaa7f",
+  "source_model": "worlds/models/cave_world/meshes/cave_world.obj",
+  "source_repository": "https://github.com/LTU-RAI/darpa_subt_worlds",
+  "source_sha256": "cb8bff13e5e2caf476b1feab43e79e6f5b438e96639aa6c9ea85234c04f7a45e",
+  "texture_sha256": {
+    "textures/CaveWall.png": "22e63ab7d5ad5f6226bb6e7dfd4d2e3198a45c9444427e2b33ce961bcc24eb4b",
+    "textures/CaveWall_Albedo.png": "9788fb48b768badc1efd358146e6dc88ee91374014296c5579538d23adf60930",
+    "textures/RockPile_Albedo.png": "1a48cefe489ce282beebc85c16d81a97b8a76222bd7f42beef169e6f79538381",
+    "textures/RockPile_Cave.png": "d075403c3bba0942f84758a1757e67777ab3ef133e6dccca9faa8c154b8ff0bf",
+    "textures/Rocks_Cave.png": "20c8903fc087036fcdf881695d939929208cd9621bb7980a0a42f46831f3e156",
+    "textures/Stalgmite.png": "d4ab7dce4f4b61798c1afb85453a064fac96dbb41d599a002a170f643dec866d",
+    "textures/StriatedRock_Albedo.png": "99af7a33d7901c13a735c91207eadb1acc266c8ab97d4f2d7dc085e38ee10cd2",
+    "textures/TowerBase.png": "fc2688cdad8599d8fec40fb9300c724ac4a213585d5edc7cf6f2470abe1924d4"
+  }
+}

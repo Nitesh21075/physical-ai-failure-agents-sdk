@@ -1,0 +1,91 @@
+{
+  "world_id": "warehouse_danger_v1",
+  "entry_stage": "warehouse_world.usda",
+  "description": "Native Isaac Sim warehouse with forklifts and a physically interactive marginal loaded-rack collapse cell.",
+  "composition": {
+    "format": "OpenUSD",
+    "conversion_required": false,
+    "environment_asset": "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0/Isaac/Environments/Simple_Warehouse/warehouse_with_forklifts.usd",
+    "environment_provider": "NVIDIA Isaac Sim 6.0 Local Assets Pack",
+    "environment_is_native_isaac_usd": true,
+    "environment_collected_locally": false,
+    "environment_offset_xyz_m": [20.0, 0.0, 0.0],
+    "local_packaging_status": "Native USD reference is live and cacheable; run Collect Assets or install the matching Local Assets Pack before an offline recording.",
+    "presentation_status": "Technical camera acceptance passes, but human review of the final witness sequence found the danger annex overlit and visually sparse; art-direction acceptance is pending.",
+    "robot_asset": "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/6.0/Isaac/Robots/NVIDIA/NovaCarter/nova_carter.usd"
+  },
+  "interactive_prims": {
+    "support": "/World/FailureZones/RackCollapseZone/SupportPrimary",
+    "primary_falling_body": "/World/FailureZones/RackCollapseZone/BeamPrimary",
+    "push_face": "/World/FailureZones/RackCollapseZone/SupportPrimary/PushFace",
+    "interaction_target": "/World/FailureZones/RackCollapseZone/InteractionTarget",
+    "robot": "/World/Robot"
+  },
+  "cameras": {
+    "ego": "/World/Sensors/RoverEgoCamera",
+    "tracking": "/World/Sensors/RoverTrackingCamera",
+    "witness": "/World/Sensors/RackCollapseCamera"
+  },
+  "failure_zones": {
+    "rack_collapse": {
+      "root": "/World/FailureZones/RackCollapseZone",
+      "support": "/World/FailureZones/RackCollapseZone/SupportPrimary",
+      "primary_falling_body": "/World/FailureZones/RackCollapseZone/BeamPrimary",
+      "interaction_target": "/World/FailureZones/RackCollapseZone/InteractionTarget",
+      "experiment_start_pose": {
+        "position_xyz_m": [0.0, -1.65, 0.35],
+        "heading": "+Y",
+        "orientation_quaternion_wxyz": [0.70710678, 0.0, 0.0, 0.70710678]
+      },
+      "expected_initial_support_position_xyz_m": [0.0, 0.0, 1.5],
+      "expected_initial_falling_body_position_xyz_m": [0.0, 0.0, 3.25],
+      "pre_actuation_position_tolerance_m": {
+        "rover": 0.75,
+        "support": 0.25,
+        "primary_falling_body": 0.45
+      },
+      "witness_camera": {
+        "prim": "/World/Sensors/RackCollapseCamera",
+        "eye_xyz_m": [4.2, -5.8, 4.1],
+        "target_xyz_m": [0.0, 0.0, 1.55],
+        "focal_length_mm": 22.0
+      },
+      "tracking_camera": {
+        "eye_offset_robot_xyz_m": [-5.0, 0.0, 2.6],
+        "target_offset_robot_xyz_m": [1.5, 0.0, 1.0],
+        "focal_length_mm": 18.0
+      },
+      "reactor_seed_camera_role": "witness",
+      "fill_light_xyz_m": [0.0, -2.5, 3.2],
+      "fill_light_intensity": 75000.0,
+      "fill_light_radius_m": 0.65,
+      "semantic_targets": [
+        {
+          "prim": "/World/FailureZones/RackCollapseZone/SupportPrimary/CollisionAndVisual",
+          "label": "rack_support"
+        },
+        {
+          "prim": "/World/FailureZones/RackCollapseZone/BeamPrimary/CollisionAndVisual",
+          "label": "loaded_rack_beam"
+        }
+      ],
+      "required_semantic_labels": {
+        "tracking": "rack_support",
+        "witness": "loaded_rack_beam"
+      },
+      "physics_status": "Live Isaac Sim 6.0.1 acceptance passed: the pre-actuation stability gate passed and combined run warehouse-danger-collapse-camera-20260825 produced a measured 2.936 m beam drop with 31 synchronized frames per role.",
+      "causal_chain": "Nova Carter wheel contact displaces the low-friction support; the loaded rack crossbeam loses support; PhysX gravity/contact determines whether it falls.",
+      "collapse_threshold_m": 0.8,
+      "failure_type": "structural_collapse",
+      "task": "warehouse_rack_support_contact",
+      "reactor_prompt": "Tracking-camera RGB view of a Nova Carter inspection rover entering a marked industrial warehouse danger cell beside an unstable loaded storage rack. Preserve the rover, yellow movable support, loaded crossbeam, cargo, warning perimeter, warehouse shelves and forklifts while continuing the future scene."
+    }
+  },
+  "rover_interactions": {
+    "rack_support_push": {
+      "approach": "Drive from the negative-Y side into SupportPrimary/PushFace using ordinary wheel and chassis contact.",
+      "success_signal": "SupportPrimary translates and the loaded crossbeam drops more than the declared collapse threshold."
+    }
+  },
+  "immutable_base_policy": "Do not write experiments into warehouse_world.usda or component layers; use a run-owned derived/session layer."
+}

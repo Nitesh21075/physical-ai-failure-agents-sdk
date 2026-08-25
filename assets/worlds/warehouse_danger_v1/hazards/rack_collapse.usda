@@ -1,0 +1,200 @@
+#usda 1.0
+(
+    defaultPrim = "RackCollapseZone"
+)
+
+def Xform "RackCollapseZone" (
+    customData = {
+        string harness_hazard_type = "marginal_loaded_rack_collapse"
+        string harness_activation = "Nova Carter drives in positive Y into SupportPrimary/PushFace"
+        string harness_physical_mechanism = "A dynamic loaded crossbeam rests on a separate low-friction support. Rover contact can move the support clear; gravity and contact determine the fall."
+        string harness_status = "physics_and_automated_camera_acceptance_passed_presentation_art_pending"
+    }
+)
+{
+    # A slightly raised, collision-backed demonstration cell prevents the
+    # experiment from depending on the detailed collision tessellation of one
+    # particular release of the stock warehouse.
+    def Cube "CellFloor" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+    )
+    {
+        double3 xformOp:translate = (0, 0, -0.04)
+        float3 xformOp:scale = (4.5, 4.5, 0.04)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        bool physics:collisionEnabled = true
+        rel material:binding = </World/Looks/Concrete>
+        rel material:binding:physics = </World/PhysicsMaterials/RoughConcrete>
+    }
+
+    def Cube "IndustrialBackdrop" (
+        prepend apiSchemas = ["PhysicsCollisionAPI"]
+    )
+    {
+        double3 xformOp:translate = (0, 4.35, 2.4)
+        float3 xformOp:scale = (4.5, 0.12, 2.4)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        bool physics:collisionEnabled = true
+        rel material:binding = </World/Looks/Concrete>
+    }
+
+    def Xform "BeamPrimary" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+        customData = {
+            string harness_role = "loaded_rack_crossbeam"
+            string harness_failure_role = "falls with attached cargo after support loss"
+        }
+    )
+    {
+        double3 xformOp:translate = (0, 0, 3.25)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        bool physics:rigidBodyEnabled = true
+        bool physics:kinematicEnabled = false
+        float physics:mass = 35
+
+        def Cube "CollisionAndVisual" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            float3 xformOp:scale = (2.15, 0.18, 0.22)
+            uniform token[] xformOpOrder = ["xformOp:scale"]
+            bool physics:collisionEnabled = true
+            rel material:binding = </World/Looks/Steel>
+            rel material:binding:physics = </World/PhysicsMaterials/RackFailureContact>
+        }
+
+        def Cube "CargoLeft" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            double3 xformOp:translate = (-1.15, 0, 0.66)
+            float3 xformOp:scale = (0.70, 0.62, 0.44)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            bool physics:collisionEnabled = true
+            rel material:binding = </World/Looks/SafetyYellow>
+        }
+
+        def Cube "CargoRight" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            double3 xformOp:translate = (1.05, 0, 0.58)
+            float3 xformOp:scale = (0.78, 0.62, 0.36)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            bool physics:collisionEnabled = true
+            rel material:binding = </World/Looks/SafetyYellow>
+        }
+
+        def Cube "HazardStripe"
+        {
+            double3 xformOp:translate = (0, -0.44, 0)
+            float3 xformOp:scale = (0.70, 0.02, 0.24)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            rel material:binding = </World/Looks/SafetyYellow>
+        }
+    }
+
+    def Xform "SupportPrimary" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+        customData = {
+            string harness_role = "marginal_movable_rack_support"
+            string harness_interactive = "true"
+            string harness_rover_contact = "approach from negative Y and drive positive Y"
+        }
+    )
+    {
+        double3 xformOp:translate = (0, 0, 1.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        bool physics:rigidBodyEnabled = true
+        bool physics:kinematicEnabled = false
+        float physics:mass = 3
+
+        def Cube "CollisionAndVisual" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            float3 xformOp:scale = (0.32, 0.12, 1.5)
+            uniform token[] xformOpOrder = ["xformOp:scale"]
+            bool physics:collisionEnabled = true
+            rel material:binding = </World/Looks/SafetyYellow>
+            rel material:binding:physics = </World/PhysicsMaterials/RackFailureContact>
+        }
+
+        def Cube "BasePlate"
+        {
+            double3 xformOp:translate = (0, 0, -1.48)
+            float3 xformOp:scale = (0.50, 0.55, 0.025)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            rel material:binding = </World/Looks/Steel>
+        }
+
+        def Cube "PushFace" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            double3 xformOp:translate = (0, -0.37, -1.02)
+            float3 xformOp:scale = (0.66, 0.14, 0.25)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            bool physics:collisionEnabled = true
+            rel material:binding = </World/Looks/SafetyYellow>
+            rel material:binding:physics = </World/PhysicsMaterials/RackFailureContact>
+        }
+    }
+
+    # These members make the cell read as industrial racking but deliberately
+    # remain clear of the dynamic crossbeam, so they cannot secretly support it.
+    def Xform "StaticRack"
+    {
+        def Cube "RearUprightLeft"
+        {
+            double3 xformOp:translate = (-2.45, 1.15, 1.8)
+            float3 xformOp:scale = (0.14, 0.14, 1.8)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            rel material:binding = </World/Looks/Steel>
+        }
+        def Cube "RearUprightRight"
+        {
+            double3 xformOp:translate = (2.45, 1.15, 1.8)
+            float3 xformOp:scale = (0.14, 0.14, 1.8)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            rel material:binding = </World/Looks/Steel>
+        }
+        def Cube "RearCrossbar"
+        {
+            double3 xformOp:translate = (0, 1.15, 3.55)
+            float3 xformOp:scale = (2.45, 0.14, 0.14)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            rel material:binding = </World/Looks/Steel>
+        }
+    }
+
+    def Xform "InteractionTarget"
+    {
+        double3 xformOp:translate = (0, -1.4, 0.05)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        def Cylinder "Marker"
+        {
+            float radius = 0.24
+            float height = 0.10
+            rel material:binding = </World/Looks/LampGlow>
+        }
+    }
+
+    def Xform "WarningPerimeter"
+    {
+        def Cube "StripeLeft"
+        {
+            double3 xformOp:translate = (-2.6, -1.6, 0.025)
+            float3 xformOp:scale = (0.08, 2.2, 0.025)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            rel material:binding = </World/Looks/SafetyYellow>
+        }
+        def Cube "StripeRight"
+        {
+            double3 xformOp:translate = (2.6, -1.6, 0.025)
+            float3 xformOp:scale = (0.08, 2.2, 0.025)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            rel material:binding = </World/Looks/SafetyYellow>
+        }
+    }
+}

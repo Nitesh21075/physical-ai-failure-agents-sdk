@@ -43,6 +43,7 @@ class MineRoverExperiment:
     run_id: str
     seed: int
     drive: RoverDriveCommand
+    world_id: str = MINE_WORLD_ID
     camera_resolution: tuple[int, int] = (180, 320)  # height, width
     camera_tick_rate_hz: float = 10.0
 
@@ -51,6 +52,8 @@ class MineRoverExperiment:
             raise ValueError("run_id must be a simple non-empty identifier")
         if isinstance(self.seed, bool) or not isinstance(self.seed, int):
             raise ValueError("seed must be an integer")  # noqa: TRY004 - one public validation error type
+        if not self.world_id.strip() or any(part in self.world_id for part in ("/", "\\", "..")):
+            raise ValueError("world_id must be a simple non-empty identifier")
         height, width = self.camera_resolution
         if not all(isinstance(value, int) and 32 <= value <= 1920 for value in (height, width)):
             raise ValueError("camera_resolution must be height/width integers between 32 and 1920")
@@ -81,6 +84,7 @@ def write_reactor_seed_manifest(
     camera_prim: str = TRACKING_CAMERA_PATH,
     camera_role: str = REACTOR_SEED_CAMERA_ROLE,
     visual_quality: dict[str, Any] | None = None,
+    reactor_prompt: str | None = None,
 ) -> Path:
     """Record a real Isaac camera image as a bounded Reactor conditioning input.
 
@@ -93,7 +97,7 @@ def write_reactor_seed_manifest(
         raise FileNotFoundError(f"Isaac seed image does not exist: {seed_image}")
     manifest = {
         "schema_version": "v1",
-        "world_id": MINE_WORLD_ID,
+        "world_id": experiment.world_id,
         "source_authority": "physics_grounded_isaac_rgb",
         "usage": "Seed one bounded Reactor visual-world episode; it is not physical ground truth.",
         "reactor_model": "reactor/lingbot-world-2",
@@ -106,7 +110,12 @@ def write_reactor_seed_manifest(
         "derived_session_layer_path": str(session_layer),
         "rover_pose_before": rover_pose_before,
         "rover_pose_after": rover_pose_after,
-        "prompt": "Tracking-camera RGB view of a Nova Carter inspection rover approaching a roof support in a dim underground mine drift. Keep the rover, support, beam, loose rock, and debris spatially consistent while continuing the future scene.",
+        "prompt": reactor_prompt
+        or (
+            "Tracking-camera RGB view of a Nova Carter inspection rover approaching a roof "
+            "support in a dim underground mine drift. Keep the rover, support, beam, loose "
+            "rock, and debris spatially consistent while continuing the future scene."
+        ),
     }
     output = run_directory / "reactor_seed.json"
     output.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -127,18 +136,31 @@ def assess_visual_frame(image_path: str | Path) -> dict[str, Any]:
     horizontal = np.abs(np.diff(luminance, axis=1))
     vertical = np.abs(np.diff(luminance, axis=0))
     channel_std = [float(value) for value in pixels.std(axis=(0, 1)).tolist()]
+    mean_luminance = float(luminance.mean())
+    dark_pixel_fraction = float((luminance < 10.0).mean())
     dynamic_range = float(np.percentile(luminance, 99) - np.percentile(luminance, 1))
     mean_gradient = float(
         (horizontal.mean() if horizontal.size else 0.0)
         + (vertical.mean() if vertical.size else 0.0)
     )
-    passed = max(channel_std) >= 8.0 and dynamic_range >= 20.0 and mean_gradient >= 0.5
+    passed = (
+        max(channel_std) >= 8.0
+        and mean_luminance >= 12.0
+        and dark_pixel_fraction <= 0.65
+        and dynamic_range >= 20.0
+        and mean_gradient >= 0.5
+    )
     return {
         "passed": passed,
         "channel_std": channel_std,
+        "mean_luminance": mean_luminance,
+        "dark_pixel_fraction_below_10": dark_pixel_fraction,
         "luminance_dynamic_range_p01_p99": dynamic_range,
         "mean_gradient": mean_gradient,
-        "criterion": "max channel std >= 8, luminance p99-p01 >= 20, mean gradient >= 0.5",
+        "criterion": (
+            "max channel std >= 8, mean luminance >= 12, dark pixel fraction below 10 <= 0.65, "
+            "luminance p99-p01 >= 20, mean gradient >= 0.5"
+        ),
     }
 
 
