@@ -40,23 +40,30 @@ Open `http://127.0.0.1:8000/agent` for campaigns,
 
 ## What is retained
 
-- `src/harness/agent_runtime/`: agent definition, ten bounded tools, hooks,
-  context, session, and Runner entrypoint.
+- `src/harness/agent_runtime/`: agent definition, seventeen bounded tools,
+  typed physical `ScenarioSpec` and synthetic `IROSceneSpec` compilers, fixed
+  Isaac executors, hooks, context, session, and Runner entrypoint.
 - `src/harness/research/`: campaign persistence, world-prompt generation, and
   visual evidence assessment—not the former proposal/pipeline runtime.
 - `src/harness/persistence/`, `pairing.py`, `comparison/`, and `media/`:
   authoritative evidence indexing and comparison.
 - `scripts/run_mine_rover_experiment.py` and `assets/worlds/mine_v1/`: the
-  deterministic Isaac Sim mine experiment boundary.
+  deterministic Isaac Sim mine experiment boundary with run-owned bounded
+  pose, physics, prop, steering, sensor, and lighting overrides.
 - `assets/worlds/warehouse_danger_v1/`: NVIDIA's native warehouse-with-forklifts
   composition plus the bounded, contact-driven rack-collapse demonstration.
 - `assets/worlds/mine_v2_subt/`: the separate LTU SubT-derived perception
-  prototype; the bounded route is accepted, while the model-visible agent tool
-  remains an operator-only perception prototype.
+  prototype; only its accepted bounded roof-support route is model-visible.
 - `src/harness/dashboard/`: the existing visual evidence and operator UI.
 
 There is no shell, arbitrary Python, generic filesystem mutation, unrestricted
 Docker, or Codex tool exposed to the model.
+
+The agent can also generate bounded primitive-room synthetic datasets through
+the installed `isaacsim.replicator.object.core` extension. This keyless IRO
+route accepts only typed primitive, physics, distribution, camera, lighting,
+and output settings; it does not expose arbitrary YAML, assets, or paths. It is
+separate from NVIDIA's API-key-backed Chat IRO natural-language UI.
 
 Read [docs/AGENTS_SDK_RUNTIME.md](docs/AGENTS_SDK_RUNTIME.md) for the exact
 call graph, full agent instructions, tool surface, persistence model, verified

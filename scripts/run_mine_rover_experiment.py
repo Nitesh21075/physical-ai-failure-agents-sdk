@@ -55,6 +55,12 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--camera-tick-rate-hz", type=float, default=10.0)
     parser.add_argument("--capture-every", type=int, default=15)
     parser.add_argument(
+        "--scenario-spec",
+        type=Path,
+        default=None,
+        help="Host-validated ScenarioSpec build artifact under the mounted project.",
+    )
+    parser.add_argument(
         "--failure-zone",
         default="roof_support",
         help="A failure-zone key declared by the selected stage's manifest.",
@@ -70,6 +76,124 @@ def _arguments() -> argparse.Namespace:
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise RuntimeError(message)
+
+
+def _load_compiled_scenario(
+    path: Path | None, *, world_id: str, failure_zone: str
+) -> tuple[dict[str, object] | None, str | None]:
+    if path is None:
+        return None, None
+    _require(path.is_file(), f"compiled scenario does not exist: {path}")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    spec = payload.get("scenario_spec")
+    _require(isinstance(spec, dict), "compiled scenario has no scenario_spec object")
+    _require(spec.get("schema_version") == "1.0", "unsupported ScenarioSpec version")
+    _require(spec.get("backend") == "isaac_sim", "ScenarioSpec backend must be isaac_sim")
+    _require(spec.get("base_world") == world_id, "ScenarioSpec world does not match stage")
+    _require(
+        spec.get("hazard", {}).get("template") == failure_zone,
+        "ScenarioSpec hazard does not match the selected failure zone",
+    )
+    return spec, payload.get("scenario_digest")
+
+
+def _bounded_vector(value: object, *, name: str, length: int = 3) -> list[float]:
+    _require(
+        isinstance(value, list) and len(value) == length, f"{name} must contain {length} values"
+    )
+    _require(
+        all(isinstance(item, (int, float)) and not isinstance(item, bool) for item in value),
+        f"{name} must be numeric",
+    )
+    return [float(item) for item in value]
+
+
+def _author_scenario_overrides(stage: object, zone: dict, spec: dict[str, object] | None) -> dict:
+    """Author only allowlisted physics and prop overrides into the run session layer."""
+    if spec is None:
+        return {"physics_overrides": {}, "placed_assets": []}
+    from pxr import Gf, UsdGeom, UsdPhysics, UsdShade
+
+    hazard = spec.get("hazard", {})
+    support_path = zone["support"]
+    falling_body_path = zone.get("primary_falling_body") or zone["beam"]
+    authored: dict[str, object] = {"physics_overrides": {}, "placed_assets": []}
+    for key, prim_path in (
+        ("support_mass_kg", support_path),
+        ("falling_body_mass_kg", falling_body_path),
+    ):
+        value = hazard.get(key)
+        if value is None:
+            continue
+        prim = stage.GetPrimAtPath(prim_path)
+        _require(prim.IsValid(), f"cannot apply {key}; missing prim {prim_path}")
+        UsdPhysics.MassAPI.Apply(prim).CreateMassAttr(float(value)).Set(float(value))
+        authored["physics_overrides"][key] = float(value)
+
+    static_friction = hazard.get("support_static_friction")
+    dynamic_friction = hazard.get("support_dynamic_friction")
+    if static_friction is not None or dynamic_friction is not None:
+        if static_friction is None:
+            static_friction = dynamic_friction
+        if dynamic_friction is None:
+            dynamic_friction = static_friction
+        material = UsdShade.Material.Define(stage, "/World/Experiment/SupportPhysicsMaterial")
+        physics_material = UsdPhysics.MaterialAPI.Apply(material.GetPrim())
+        physics_material.CreateStaticFrictionAttr(float(static_friction)).Set(
+            float(static_friction)
+        )
+        physics_material.CreateDynamicFrictionAttr(float(dynamic_friction)).Set(
+            float(dynamic_friction)
+        )
+        binding = UsdShade.MaterialBindingAPI.Apply(stage.GetPrimAtPath(support_path))
+        binding.Bind(
+            material,
+            bindingStrength=UsdShade.Tokens.strongerThanDescendants,
+            materialPurpose="physics",
+        )
+        authored["physics_overrides"].update(
+            {
+                "support_static_friction": float(static_friction),
+                "support_dynamic_friction": float(dynamic_friction),
+            }
+        )
+
+    colors = {
+        "safety_barrier_box": Gf.Vec3f(0.95, 0.65, 0.05),
+        "rubble_block": Gf.Vec3f(0.32, 0.28, 0.24),
+    }
+    for index, placement in enumerate(spec.get("placed_assets", [])):
+        asset_id = placement["asset_id"]
+        _require(asset_id in colors, f"unsupported approved asset: {asset_id}")
+        prim_path = f"/World/Experiment/Props/{asset_id}_{index:02d}"
+        cube = UsdGeom.Cube.Define(stage, prim_path)
+        cube.CreateSizeAttr(1.0)
+        cube.CreateDisplayColorAttr([colors[asset_id]])
+        xform = UsdGeom.Xformable(cube)
+        position = _bounded_vector(placement["position_xyz_m"], name="asset position")
+        scale = _bounded_vector(placement["scale_xyz_m"], name="asset scale")
+        xform.AddTranslateOp().Set(Gf.Vec3d(*position))
+        xform.AddScaleOp().Set(Gf.Vec3f(*scale))
+        UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
+        if placement["dynamic"]:
+            UsdPhysics.RigidBodyAPI.Apply(cube.GetPrim())
+            UsdPhysics.MassAPI.Apply(cube.GetPrim()).CreateMassAttr(
+                float(placement["mass_kg"])
+            ).Set(float(placement["mass_kg"]))
+        material = UsdShade.Material.Define(
+            stage, f"/World/Experiment/Materials/PropMaterial_{index:02d}"
+        )
+        physics_material = UsdPhysics.MaterialAPI.Apply(material.GetPrim())
+        friction = float(placement["friction"])
+        physics_material.CreateStaticFrictionAttr(friction).Set(friction)
+        physics_material.CreateDynamicFrictionAttr(friction).Set(friction)
+        UsdShade.MaterialBindingAPI.Apply(cube.GetPrim()).Bind(
+            material,
+            bindingStrength=UsdShade.Tokens.strongerThanDescendants,
+            materialPurpose="physics",
+        )
+        authored["placed_assets"].append({"prim": prim_path, **placement})
+    return authored
 
 
 def _write_derived_stage(source_stage: Path, run_directory: Path) -> Path:
@@ -158,35 +282,51 @@ def _matrix_to_quaternion_wxyz(rotation: object) -> object:
     if trace > 0:
         scale = (trace + 1.0) ** 0.5 * 2.0
         quaternion = np.array(
-            [0.25 * scale, (matrix[2, 1] - matrix[1, 2]) / scale,
-             (matrix[0, 2] - matrix[2, 0]) / scale, (matrix[1, 0] - matrix[0, 1]) / scale]
+            [
+                0.25 * scale,
+                (matrix[2, 1] - matrix[1, 2]) / scale,
+                (matrix[0, 2] - matrix[2, 0]) / scale,
+                (matrix[1, 0] - matrix[0, 1]) / scale,
+            ]
         )
     else:
         index = int(np.argmax(np.diag(matrix)))
         if index == 0:
             scale = (1.0 + matrix[0, 0] - matrix[1, 1] - matrix[2, 2]) ** 0.5 * 2.0
             quaternion = np.array(
-                [(matrix[2, 1] - matrix[1, 2]) / scale, 0.25 * scale,
-                 (matrix[0, 1] + matrix[1, 0]) / scale, (matrix[0, 2] + matrix[2, 0]) / scale]
+                [
+                    (matrix[2, 1] - matrix[1, 2]) / scale,
+                    0.25 * scale,
+                    (matrix[0, 1] + matrix[1, 0]) / scale,
+                    (matrix[0, 2] + matrix[2, 0]) / scale,
+                ]
             )
         elif index == 1:
             scale = (1.0 + matrix[1, 1] - matrix[0, 0] - matrix[2, 2]) ** 0.5 * 2.0
             quaternion = np.array(
-                [(matrix[0, 2] - matrix[2, 0]) / scale,
-                 (matrix[0, 1] + matrix[1, 0]) / scale, 0.25 * scale,
-                 (matrix[1, 2] + matrix[2, 1]) / scale]
+                [
+                    (matrix[0, 2] - matrix[2, 0]) / scale,
+                    (matrix[0, 1] + matrix[1, 0]) / scale,
+                    0.25 * scale,
+                    (matrix[1, 2] + matrix[2, 1]) / scale,
+                ]
             )
         else:
             scale = (1.0 + matrix[2, 2] - matrix[0, 0] - matrix[1, 1]) ** 0.5 * 2.0
             quaternion = np.array(
-                [(matrix[1, 0] - matrix[0, 1]) / scale,
-                 (matrix[0, 2] + matrix[2, 0]) / scale,
-                 (matrix[1, 2] + matrix[2, 1]) / scale, 0.25 * scale]
+                [
+                    (matrix[1, 0] - matrix[0, 1]) / scale,
+                    (matrix[0, 2] + matrix[2, 0]) / scale,
+                    (matrix[1, 2] + matrix[2, 1]) / scale,
+                    0.25 * scale,
+                ]
             )
     return quaternion / np.linalg.norm(quaternion)
 
 
-def _look_at_pose(eye: object, target: object, up_hint: object = (0.0, 0.0, 1.0)) -> tuple[object, object]:
+def _look_at_pose(
+    eye: object, target: object, up_hint: object = (0.0, 0.0, 1.0)
+) -> tuple[object, object]:
     """Return a camera pose using Isaac's +X right, +Y up, -Z forward convention."""
     import numpy as np
 
@@ -244,10 +384,10 @@ def _displacement(before: dict[str, list[float]], after: dict[str, list[float]])
 
 
 def _position_error(position: list[float], expected: list[float]) -> float:
-    return sum(
-        (actual - target) ** 2
-        for actual, target in zip(position, expected, strict=True)
-    ) ** 0.5
+    return (
+        sum((actual - target) ** 2 for actual, target in zip(position, expected, strict=True))
+        ** 0.5
+    )
 
 
 def _write_standard_artifacts(
@@ -264,6 +404,8 @@ def _write_standard_artifacts(
     task: str,
     failure_type: str,
     preferred_camera_role: str,
+    scenario_spec: dict[str, object] | None = None,
+    scenario_digest: str | None = None,
 ) -> None:
     scenario = {
         "environment": experiment.world_id,
@@ -273,15 +415,16 @@ def _write_standard_artifacts(
         "parameters": {
             "failure_zone": failure_zone,
             "rover_linear_velocity_mps": experiment.drive.linear_velocity_mps,
+            "rover_angular_velocity_radps": experiment.drive.angular_velocity_radps,
             "control_steps": experiment.drive.control_steps,
         },
         "hazards": {failure_type: True},
+        "scenario_spec": scenario_spec,
+        "scenario_digest": scenario_digest,
     }
     preferred_frames = camera_frames.get(preferred_camera_role, [])
     evidence_refs = [str(path) for path in preferred_frames]
-    sensor_streams = {
-        role: [str(path) for path in paths] for role, paths in camera_frames.items()
-    }
+    sensor_streams = {role: [str(path) for path in paths] for role, paths in camera_frames.items()}
     result = {
         "task_success": True,
         "environmental_failure": structural_collapse,
@@ -431,6 +574,26 @@ def main() -> int:
         f"failure zone {args.failure_zone!r} is not declared by {manifest_path}",
     )
     zone = failure_zones[args.failure_zone]
+    scenario_spec, scenario_digest = _load_compiled_scenario(
+        args.scenario_spec, world_id=world_id, failure_zone=args.failure_zone
+    )
+    if scenario_spec is not None:
+        controller = scenario_spec["controller"]
+        sensors = scenario_spec["sensors"]
+        camera_presets = {
+            "physics_only": (True, 180, 320),
+            "rgb_semantic_low": (False, 180, 320),
+            "rgb_semantic_standard": (False, 360, 640),
+        }
+        _require(sensors["preset"] in camera_presets, "unsupported camera preset")
+        args.disable_camera, args.camera_height, args.camera_width = camera_presets[
+            sensors["preset"]
+        ]
+        args.capture_every = int(sensors["capture_every_steps"])
+        args.linear_velocity_mps = float(controller["linear_velocity_mps"])
+        args.angular_velocity_radps = float(controller["angular_velocity_radps"])
+        args.control_steps = int(controller["control_steps"])
+        args.seed = int(scenario_spec["seed"])
     support_path = zone.get("support")
     falling_body_path = zone.get("primary_falling_body") or zone.get("beam")
     _require(isinstance(support_path, str), "failure zone has no support prim")
@@ -438,9 +601,11 @@ def main() -> int:
     witness_config = zone.get("witness_camera", {})
     tracking_config = zone.get("tracking_camera", {})
     witness_camera_path = witness_config.get("prim", WITNESS_CAMERA_PATH)
-    preferred_camera_role = zone.get(
-        "reactor_seed_camera_role", REACTOR_SEED_CAMERA_ROLE
-    )
+    preferred_camera_role = zone.get("reactor_seed_camera_role", REACTOR_SEED_CAMERA_ROLE)
+    if scenario_spec is not None:
+        requested_role = scenario_spec["sensors"]["preferred_camera_role"]
+        if requested_role != "manifest_default":
+            preferred_camera_role = requested_role
     _require(
         preferred_camera_role in {"ego", "tracking", "witness"},
         "reactor seed camera role must be ego, tracking, or witness",
@@ -508,6 +673,7 @@ def main() -> int:
         # into the anonymous session layer and exported separately per run.
         session_layer = stage.GetSessionLayer()
         stage.SetEditTarget(session_layer)
+        authored_scenario_overrides = _author_scenario_overrides(stage, zone, scenario_spec)
         selected_variants = [
             f"{ROVER_PRIM_PATH}:Configuration=Full_Merged",
             f"{ROVER_PRIM_PATH}:Physics=physx",
@@ -544,7 +710,18 @@ def main() -> int:
             for target in semantic_targets:
                 semantics_utils.add_labels(target["prim"], labels=target["label"])
             fill_light = UsdLux.SphereLight.Define(stage, "/World/Sensors/RoverEvidenceFill")
-            fill_light.CreateIntensityAttr(float(zone.get("fill_light_intensity", 4500.0)))
+            lighting_multiplier = {
+                "low_light": 0.35,
+                "standard": 1.0,
+                "bright": 1.75,
+            }[
+                scenario_spec.get("environment", {}).get("lighting_preset", "standard")
+                if scenario_spec is not None
+                else "standard"
+            ]
+            fill_light.CreateIntensityAttr(
+                float(zone.get("fill_light_intensity", 4500.0)) * lighting_multiplier
+            )
             fill_light.CreateRadiusAttr(float(zone.get("fill_light_radius_m", 0.18)))
             fill_light.CreateColorAttr(Gf.Vec3f(0.62, 0.72, 1.0))
             UsdGeom.Xformable(fill_light).AddTranslateOp().Set(
@@ -577,17 +754,42 @@ def main() -> int:
             [[left_velocity] * len(left_dofs) + [right_velocity] * len(right_dofs)],
             dtype=np.float32,
         )
-        start_pose = zone["experiment_start_pose"]
+        start_pose = dict(zone["experiment_start_pose"])
+        if scenario_spec is not None:
+            start_offset = scenario_spec["robot"]["start_offset_xyz_m"]
+            start_pose["position_xyz_m"] = [
+                float(value) + float(offset)
+                for value, offset in zip(start_pose["position_xyz_m"], start_offset, strict=True)
+            ]
         rover.set_world_poses(
             positions=np.array([start_pose["position_xyz_m"]], dtype=np.float32),
             orientations=np.array([start_pose["orientation_quaternion_wxyz"]], dtype=np.float32),
         )
+        beam = RigidPrim(falling_body_path)
+        support = RigidPrim(support_path)
+        support_offset = (
+            scenario_spec.get("hazard", {}).get("support_offset_xyz_m", [0.0, 0.0, 0.0])
+            if scenario_spec is not None
+            else [0.0, 0.0, 0.0]
+        )
+        if any(float(value) != 0.0 for value in support_offset):
+            support_position, support_orientation = _world_pose(support)
+            support.set_world_poses(
+                positions=np.array(
+                    [
+                        [
+                            float(value) + float(offset)
+                            for value, offset in zip(support_position, support_offset, strict=True)
+                        ]
+                    ],
+                    dtype=np.float32,
+                ),
+                orientations=np.array([support_orientation], dtype=np.float32),
+            )
         zero_targets = np.zeros_like(wheel_targets)
         for _ in range(30):
             rover.set_dof_velocity_targets(zero_targets, dof_indices=wheel_indices)
             app.update()
-        beam = RigidPrim(falling_body_path)
-        support = RigidPrim(support_path)
         camera_sensors: dict[str, object] = {}
         camera_prims: dict[str, object] = {}
         camera_pose_timeline: list[dict[str, object]] = []
@@ -624,7 +826,10 @@ def main() -> int:
             }
             for role, (path, position, orientation) in initial_poses.items():
                 existing_camera = stage.GetPrimAtPath(path)
-                if existing_camera.IsValid() and "OmniSensorAPI" not in existing_camera.GetAppliedSchemas():
+                if (
+                    existing_camera.IsValid()
+                    and "OmniSensorAPI" not in existing_camera.GetAppliedSchemas()
+                ):
                     existing_camera.ApplyAPI("OmniSensorAPI")
                 camera_prim = RtxCamera(
                     path,
@@ -665,10 +870,17 @@ def main() -> int:
             ),
             "support": _position_error(
                 before["support"]["position_xyz_m"],
-                zone.get(
-                    "expected_initial_support_position_xyz_m",
-                    before["support"]["position_xyz_m"],
-                ),
+                [
+                    float(value) + float(offset)
+                    for value, offset in zip(
+                        zone.get(
+                            "expected_initial_support_position_xyz_m",
+                            before["support"]["position_xyz_m"],
+                        ),
+                        support_offset,
+                        strict=True,
+                    )
+                ],
             ),
             "primary_falling_body": _position_error(
                 before["beam"]["position_xyz_m"],
@@ -680,8 +892,7 @@ def main() -> int:
         }
         pre_actuation_stability_gate = {
             "passed": all(
-                stability_errors[role]
-                <= float(stability_tolerances.get(role, float("inf")))
+                stability_errors[role] <= float(stability_tolerances.get(role, float("inf")))
                 for role in stability_errors
             ),
             "position_error_m": stability_errors,
@@ -696,20 +907,14 @@ def main() -> int:
             "pre-actuation stability gate failed: "
             + json.dumps(pre_actuation_stability_gate, sort_keys=True),
         )
-        camera_frames: dict[str, list[Path]] = {
-            role: [] for role in ("ego", "tracking", "witness")
-        }
+        camera_frames: dict[str, list[Path]] = {role: [] for role in ("ego", "tracking", "witness")}
         for step in range(experiment.drive.control_steps):
             rover.set_dof_velocity_targets(wheel_targets, dof_indices=wheel_indices)
             app.update()
             if camera_sensors:
                 rover_position, rover_orientation = _world_pose(rover)
-                ego_eye = rover_position + _rotate_vector(
-                    rover_orientation, (0.0, 0.0, 1.65)
-                )
-                ego_target = ego_eye + _rotate_vector(
-                    rover_orientation, (5.0, 0.0, -0.25)
-                )
+                ego_eye = rover_position + _rotate_vector(rover_orientation, (0.0, 0.0, 1.65))
+                ego_target = ego_eye + _rotate_vector(rover_orientation, (5.0, 0.0, -0.25))
                 desired_eye = rover_position + _rotate_vector(
                     rover_orientation,
                     tracking_config.get("eye_offset_robot_xyz_m", (-2.1, 0.0, 3.5)),
@@ -734,9 +939,7 @@ def main() -> int:
             ):
                 pose_record: dict[str, object] = {
                     "control_step": step,
-                    "rover_position_xyz_m": [
-                        float(value) for value in rover_position.tolist()
-                    ],
+                    "rover_position_xyz_m": [float(value) for value in rover_position.tolist()],
                     "cameras": {},
                 }
                 for role, sensor in camera_sensors.items():
@@ -744,8 +947,7 @@ def main() -> int:
                     if frame is None:
                         continue
                     frame_path = (
-                        run_directory / "camera" / role /
-                        f"rgb_{len(camera_frames[role]):06d}.png"
+                        run_directory / "camera" / role / f"rgb_{len(camera_frames[role]):06d}.png"
                     )
                     _save_rgb(frame, frame_path)
                     camera_frames[role].append(frame_path)
@@ -787,13 +989,7 @@ def main() -> int:
             for role, paths in camera_frames.items()
         }
         semantic_labels_by_role = {
-            role: sorted(
-                {
-                    str(box["label"])
-                    for sample in samples
-                    for box in sample["boxes"]
-                }
-            )
+            role: sorted({str(box["label"]) for sample in samples for box in sample["boxes"]})
             for role, samples in semantic_visibility.items()
         }
         preferred_content_passed = bool(camera_frames[preferred_camera_role]) and all(
@@ -886,6 +1082,8 @@ def main() -> int:
             task=zone.get("task", "mine_roof_support_contact"),
             failure_type=zone.get("failure_type", "structural_collapse"),
             preferred_camera_role=preferred_camera_role,
+            scenario_spec=scenario_spec,
+            scenario_digest=scenario_digest,
         )
         camera_streams = {
             role: {
@@ -952,6 +1150,9 @@ def main() -> int:
             "collapse_criterion": f"primary falling body vertical drop > {collapse_threshold_m} m",
             "reactor_seed_manifest": str(seed_manifest),
             "source_stage_unchanged": True,
+            "scenario_digest": scenario_digest,
+            "scenario_spec": scenario_spec,
+            "authored_scenario_overrides": authored_scenario_overrides,
             "pre_actuation_stability_gate": pre_actuation_stability_gate,
         }
         (run_directory / "summary.json").write_text(

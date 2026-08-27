@@ -3,7 +3,7 @@
   "entry_stage": "mine_world.usda",
   "description": "Hybrid perception world using a converted LTU DARPA SubT cave shell and the unchanged mine_v1 roof-support experiment.",
   "prototype_status": "bounded route accepted in real Isaac Sim 6.0.1 physics and RTX diagnostics",
-  "agent_integration": "not exposed to MineFailureResearcher; the bounded model tool remains on deterministic mine_v1",
+  "agent_integration": "exposed only through the validated ScenarioSpec roof_support route; full-cave navigation and collision remain unavailable",
   "composition": {
     "sublayers": [
       "../mine_v1/layers/physics_defaults.usda",

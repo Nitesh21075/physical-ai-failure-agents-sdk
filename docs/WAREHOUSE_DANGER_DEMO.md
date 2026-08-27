@@ -3,24 +3,28 @@
 ## What the AI agent can do in Isaac Sim
 
 The model does not receive Isaac Sim Python, a shell, Docker, or a generic USD
-editor. The Agents SDK gives it ten typed tools. Six are directly relevant to
-Isaac evidence:
+editor. The Agents SDK gives it seventeen typed tools. Nine are directly relevant
+to Isaac scenario construction or evidence:
 
-1. `inspect_isaac_capabilities` reports the executable world catalog, native
-   USD/offline status, allowlisted actions, and explicit limitations.
+1. `list_scenario_capabilities` reports executable worlds, assets, controllers,
+   sensors, parameter bounds, and explicit unavailable adapters.
 2. `inspect_mine_world` retains the detailed `mine_v1` regression contract.
 3. `get_recent_experiments` returns compact indexed scientific history.
 4. `inspect_isaac_run` reopens measured physics, camera, stability, and visual
    readiness evidence for one indexed Isaac run.
-5. `run_mine_roof_support_experiment` executes the regression mine route.
-6. `run_warehouse_rack_collapse_experiment` executes the native warehouse
-   route. Both run tools accept only bounded speed, steps, and seed.
+5. `validate_scenario` rejects unknown or incompatible ScenarioSpec content.
+6. `build_scenario` persists a normalized, digested execution request.
+7. `run_scenario` executes one built request through the fixed Isaac boundary.
+8. `inspect_simulation_checkpoint` reads initial or final synchronized state.
+9. `compare_isaac_runs` compares measured evidence without rerunning Isaac.
 
-The remaining tools inspect campaign state and manage the real Reactor pairing,
-status, visual assessment, and comparison. One ordinary agent step may claim at
-most one new Isaac run. The model cannot teleport Nova Carter or invoke a
-collapse; it selects bounded parameters and the fixed runner applies real wheel
-velocity targets.
+Four additional tools validate, build, run, and inspect keyless IRO synthetic
+scenes; they are not physical warehouse experiments. The remaining tools inspect
+campaign state and manage the real Reactor pairing, status, visual assessment,
+and comparison. One ordinary agent step may claim at most one new Isaac run. The
+model cannot teleport Nova Carter or invoke a collapse; it selects a bounded
+typed scenario and the fixed runner applies run-owned session overrides plus
+real differential wheel-velocity targets.
 
 ## Scenario composition
 

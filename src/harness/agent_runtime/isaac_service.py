@@ -10,6 +10,17 @@ from pathlib import Path
 from typing import ClassVar
 from uuid import uuid4
 
+from harness.agent_runtime.scenario_spec import (
+    WORLD_ROUTES as SCENARIO_WORLD_ROUTES,
+)
+from harness.agent_runtime.scenario_spec import (
+    CameraPreset,
+    FixedVelocityControllerSpec,
+    HazardSpec,
+    ScenarioBuildStore,
+    ScenarioSpec,
+    WorldId,
+)
 from harness.media.isaac_export import export_isaac_camera_replays
 from harness.persistence.store import ExperimentStore
 
@@ -22,6 +33,7 @@ class MineIsaacToolService:
     MAX_CONTROL_STEPS = 900
     WORLD_ROUTES: ClassVar[dict[str, tuple[str, str]]] = {
         "mine_v1": ("assets/worlds/mine_v1/mine_world.usda", "roof_support"),
+        "mine_v2_subt": ("assets/worlds/mine_v2_subt/mine_world.usda", "roof_support"),
         "warehouse_danger_v1": (
             "assets/worlds/warehouse_danger_v1/warehouse_world.usda",
             "rack_collapse",
@@ -34,6 +46,7 @@ class MineIsaacToolService:
         self.project_root = Path(project_root).resolve()
         self.runs_root = Path(runs_root).resolve()
         self.store = store
+        self.scenario_builds = ScenarioBuildStore(self.runs_root)
         if self.runs_root != self.project_root / "runs":
             raise ValueError("Isaac runs_root must be the cloned project's runs directory")
 
@@ -47,12 +60,48 @@ class MineIsaacToolService:
     ) -> dict:
         self._validate(rover_linear_velocity_mps, control_steps, seed)
         try:
+            world = WorldId(world_id)
+        except ValueError as error:
+            raise ValueError(f"unsupported Isaac world: {world_id}") from error
+        hazard = SCENARIO_WORLD_ROUTES[world][1]
+        spec = ScenarioSpec(
+            base_world=world,
+            hazard=HazardSpec(template=hazard),
+            controller=FixedVelocityControllerSpec(
+                linear_velocity_mps=rover_linear_velocity_mps,
+                control_steps=control_steps,
+            ),
+            sensors={"preset": CameraPreset.RGB_SEMANTIC_LOW},
+            seed=seed,
+        )
+        build = self.scenario_builds.build(spec)
+        return self.run_scenario(spec, compiled_spec_path=build["compiled_spec_path"])
+
+    def run_scenario(
+        self,
+        spec: ScenarioSpec,
+        *,
+        compiled_spec_path: str | Path | None = None,
+    ) -> dict:
+        """Execute one validated scenario through the fixed Isaac container boundary."""
+        spec = ScenarioSpec.model_validate(spec)
+        world_id = spec.base_world.value
+        try:
             stage_relative, failure_zone = self.WORLD_ROUTES[world_id]
         except KeyError as error:
             raise ValueError(f"unsupported Isaac world: {world_id}") from error
         stage_path = self.project_root / stage_relative
         if not stage_path.is_file():
             raise FileNotFoundError(f"configured Isaac stage is unavailable: {stage_path}")
+        if compiled_spec_path is None:
+            compiled_spec_path = self.scenario_builds.build(spec)["compiled_spec_path"]
+        compiled_spec_path = Path(compiled_spec_path).resolve()
+        try:
+            compiled_relative = compiled_spec_path.relative_to(self.project_root)
+        except ValueError as error:
+            raise ValueError("compiled scenario must be underneath the project root") from error
+        if not compiled_spec_path.is_file():
+            raise FileNotFoundError(f"compiled scenario is unavailable: {compiled_spec_path}")
         run_id = str(uuid4())
         container_runs = "/workspace/project/runs/isaac-mine"
         command = [
@@ -89,8 +138,8 @@ class MineIsaacToolService:
                 "scripts/run_mine_rover_experiment.py "
                 f"--runs-dir {container_runs} --run-id {run_id} "
                 f"--stage /workspace/project/{stage_relative} "
-                f"--failure-zone {failure_zone} --linear-velocity-mps {rover_linear_velocity_mps} "
-                f"--control-steps {control_steps} --seed {seed}"
+                f"--failure-zone {failure_zone} "
+                f"--scenario-spec /workspace/project/{compiled_relative.as_posix()}"
             ),
         ]
         completed = subprocess.run(
@@ -159,14 +208,14 @@ class MineIsaacToolService:
         failed = bool(summary["structural_collapse"])
         failure_type = summary.get("failure_type") or "structural_collapse"
         stable_outcome = (
-            "rack_support_stable"
-            if world_id == "warehouse_danger_v1"
-            else "roof_support_stable"
+            "rack_support_stable" if world_id == "warehouse_danger_v1" else "roof_support_stable"
         )
         return {
             "run_id": run_id,
             "world_id": world_id,
             "failure_zone": summary.get("failure_zone", failure_zone),
+            "scenario_digest": spec.digest(),
+            "scenario_spec": spec.normalized(),
             "parameters": scenario["parameters"],
             "physical_outcome": failure_type if failed else stable_outcome,
             "environmental_failure": failed,
@@ -180,9 +229,7 @@ class MineIsaacToolService:
             "artifact_directory": str(run_directory),
             "camera_frame_count": len(summary["camera_frames"]),
             "camera_frame_count_by_role": summary.get("camera_frame_count_by_role", {}),
-            "pre_actuation_stability_gate": summary.get(
-                "pre_actuation_stability_gate"
-            ),
+            "pre_actuation_stability_gate": summary.get("pre_actuation_stability_gate"),
             "visual_evidence_gate": summary.get("visual_evidence_gate"),
             "replay_available": replay_available,
         }

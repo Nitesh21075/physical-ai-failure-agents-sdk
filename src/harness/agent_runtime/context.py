@@ -42,6 +42,7 @@ class AgentRuntimeContext:
     campaign_store: ResearchCampaignStore
     paired_capture: PairedCaptureService
     mine_isaac_service: Any
+    iro_service: Any
     model: str
     allow_multiple_isaac_experiments: bool = False
     isaac_experiments_this_turn: int = 0

@@ -11,6 +11,7 @@ from agents.tracing import gen_trace_id
 
 from harness.agent_runtime.context import AgentRuntimeConfig, AgentRuntimeContext
 from harness.agent_runtime.hooks import CampaignRunHooks
+from harness.agent_runtime.iro_service import IsaacIROToolService
 from harness.agent_runtime.isaac_service import MineIsaacToolService
 from harness.agent_runtime.researcher import create_researcher
 from harness.agent_runtime.schemas import ResearchStepSummary
@@ -40,7 +41,7 @@ class MineFailureResearchService:
             experiment_budget=experiment_budget,
             model_provider="openai_agents_sdk",
             model_name=self.model,
-            capability_version="failure-worlds-agents-sdk-v2",
+            capability_version="typed-scenario-spec-v1",
             simulator_metadata={"container_image": "nvcr.io/nvidia/isaac-sim:6.0.1"},
         )
 
@@ -55,6 +56,9 @@ class MineFailureResearchService:
             campaign_store=self.campaign_store,
             paired_capture=PairedCaptureService(self.experiment_store, self.config.runs_root),
             mine_isaac_service=MineIsaacToolService(
+                self.config.project_root, self.config.runs_root, self.experiment_store
+            ),
+            iro_service=IsaacIROToolService(
                 self.config.project_root, self.config.runs_root, self.experiment_store
             ),
             model=self.model,

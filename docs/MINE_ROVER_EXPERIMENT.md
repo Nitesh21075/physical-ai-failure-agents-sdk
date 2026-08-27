@@ -81,8 +81,8 @@ For `mine_v2_subt`, add:
 ```
 
 The resulting scenario, summary, and Reactor seed use `mine_v2_subt` as the
-world ID. SubT remains operator-only; the model-visible tools allowlist
-`mine_v1` and `warehouse_danger_v1`.
+world ID. The model-visible ScenarioSpec exposes this accepted roof-support
+route only; full-cave collision and navigation remain unavailable.
 
 The first Nova Carter load can take several minutes because the reference asset
 is resolved from NVIDIA's content service. Keep the two cache volumes between

@@ -7,13 +7,19 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from agents import function_tool
 from agents.tool_context import ToolContext
 
 from harness.agent_runtime.context import AgentRuntimeContext
+from harness.agent_runtime.iro_spec import IROBuildStore, IROSceneSpec, iro_capability_catalog
+from harness.agent_runtime.scenario_spec import (
+    ScenarioBuildStore,
+    ScenarioSpec,
+    scenario_capability_catalog,
+)
 from harness.comparison.plan_c import (
     ActionAlignment,
     MatchedExperiment,
@@ -101,12 +107,28 @@ def inspect_mine_world(ctx: ToolContext[AgentRuntimeContext]) -> dict[str, Any]:
         "executable_experiments": {
             "roof_support": {
                 "status": "verified real Isaac Sim 6.0.1 Nova Carter wheel-actuated experiment",
-                "tunable_parameters": ["rover_linear_velocity_mps", "control_steps", "seed"],
-                "support_offset_m": "not advertised: no verified per-run override yet",
+                "scenario_tool": "validate_scenario -> build_scenario -> run_scenario",
+                "tunable_parameters": [
+                    "linear_velocity_mps",
+                    "angular_velocity_radps",
+                    "control_steps",
+                    "robot start offset",
+                    "support offset",
+                    "support/falling-body mass",
+                    "support friction",
+                    "camera and lighting presets",
+                    "approved prop placements",
+                    "seed",
+                ],
+                "acceptance_note": (
+                    "physics-only start/support offsets, masses, friction, steering, and one "
+                    "static prop passed a live ScenarioSpec run; new RTX combinations and "
+                    "dynamic props remain pending"
+                ),
             }
         },
         "warnings": [
-            "Only roof_support has a completed real Nova Carter/PhysX experiment in this clone.",
+            "Only roof_support is an executable mine_v1 hazard template in ScenarioSpec v1.",
             "Rockfall and debris zones are authored but not executable agent tools.",
         ],
     }
@@ -143,15 +165,9 @@ def inspect_isaac_capabilities(ctx: ToolContext[AgentRuntimeContext]) -> dict[st
             "native_isaac_usd": manifest.get("composition", {}).get(
                 "environment_is_native_isaac_usd"
             ),
-            "offline_ready": manifest.get("composition", {}).get(
-                "environment_collected_locally"
-            ),
-            "packaging_note": manifest.get("composition", {}).get(
-                "local_packaging_status"
-            ),
-            "presentation_status": manifest.get("composition", {}).get(
-                "presentation_status"
-            ),
+            "offline_ready": manifest.get("composition", {}).get("environment_collected_locally"),
+            "packaging_note": manifest.get("composition", {}).get("local_packaging_status"),
+            "presentation_status": manifest.get("composition", {}).get("presentation_status"),
         }
     return {
         "executor": "fixed Isaac Sim 6.0.1 Docker runner",
@@ -171,6 +187,272 @@ def inspect_isaac_capabilities(ctx: ToolContext[AgentRuntimeContext]) -> dict[st
             "execute more than one new Isaac run per ordinary research step",
         ],
         "worlds": worlds,
+    }
+
+
+@function_tool
+def list_scenario_capabilities(ctx: ToolContext[AgentRuntimeContext]) -> dict[str, Any]:
+    """List the exact typed Isaac scenario capabilities available to this agent.
+
+    The catalog distinguishes executable adapters from unavailable controller
+    families and reports all parameter bounds, approved assets, sensors, and
+    run limits. It describes the harness, not every API Isaac Sim supports.
+    """
+    catalog = scenario_capability_catalog(ctx.context.config.project_root)
+    catalog["synthetic_scene_generation"] = iro_capability_catalog()
+    return catalog
+
+
+@function_tool
+def validate_iro_scene(
+    ctx: ToolContext[AgentRuntimeContext], scene: IROSceneSpec
+) -> dict[str, Any]:
+    """Validate and normalize a bounded keyless IRO scene without launching Isaac.
+
+    Unknown fields, arbitrary assets or paths, excessive object/frame counts,
+    unsafe distributions, and unsupported outputs are rejected by the schema.
+    """
+    del ctx
+    return {
+        "status": "valid",
+        "scene_digest": scene.digest(),
+        "normalized_scene": scene.normalized(),
+        "execution_cost": {"isaac_runs": 1, "repeat_count": 1},
+        "evidence_scope": (
+            "synthetic scene and annotation generation; not physical-failure evidence"
+        ),
+    }
+
+
+@function_tool
+def build_iro_scene(ctx: ToolContext[AgentRuntimeContext], scene: IROSceneSpec) -> dict[str, Any]:
+    """Compile a bounded scene into trusted IRO YAML below runs/iro-builds.
+
+    The compiler owns every YAML key and expression. The model supplies no
+    paths, source text, Python, shell, Docker flags, or Omniverse commands.
+    """
+    return IROBuildStore(ctx.context.config.runs_root).build(scene)
+
+
+@function_tool(timeout=1000.0, timeout_behavior="raise_exception")
+async def run_iro_scene(ctx: ToolContext[AgentRuntimeContext], scene_id: str) -> dict[str, Any]:
+    """Run one previously built scene through local Isaac IRO without an NVIDIA API key.
+
+    This consumes the same one-Isaac-run budget as a physical experiment. Only
+    a tamper-checked build UUID is accepted; this is synthetic-data evidence,
+    not a robot experiment or physical-failure outcome.
+    """
+    local = ctx.context
+    spec, _, payload = IROBuildStore(local.config.runs_root).load(scene_id)
+    for record in local.experiment_store.list_experiments():
+        if (
+            record["backend"] == "isaac_iro"
+            and record["scenario"].get("scenario_digest") == payload["scene_digest"]
+        ):
+            raise ValueError(
+                "this exact IRO scene already has generated evidence; change the specification "
+                "or explain why a repeat is scientifically required"
+            )
+    local.claim_isaac_budget()
+    local.campaign_store.transition_campaign(local.campaign_id, "running")
+    iteration_id = local.campaign_store.begin_iteration(
+        local.campaign_id,
+        {
+            "runtime": "openai_agents_sdk",
+            "backend": "isaac_iro",
+            "scene_id": scene_id,
+            "scene_digest": payload["scene_digest"],
+            "scene_spec": spec.normalized(),
+        },
+    )
+    local.campaign_store.transition_iteration(iteration_id, IterationState.RUNNING_ISAAC)
+    try:
+        result = await asyncio.to_thread(local.iro_service.run_built_scene, scene_id)
+        local.campaign_store.record_isaac_run(iteration_id, result["run_id"])
+        local.campaign_store.transition_iteration(iteration_id, IterationState.RECORDED)
+        return result
+    except Exception as error:
+        local.campaign_store.transition_iteration(
+            iteration_id, IterationState.FAILED, error=str(error)[:1000]
+        )
+        raise
+
+
+@function_tool
+def inspect_iro_run(ctx: ToolContext[AgentRuntimeContext], run_id: str) -> dict[str, Any]:
+    """Inspect one indexed IRO run's generated artifacts and exact evidence scope."""
+    try:
+        run_id = str(UUID(run_id))
+    except (TypeError, ValueError) as error:
+        raise ValueError("run_id must be a UUID") from error
+    record = ctx.context.experiment_store.get_experiment(run_id)
+    if record is None or record["backend"] != "isaac_iro" or not record.get("run_directory"):
+        raise KeyError(f"indexed IRO run is unavailable: {run_id}")
+    run_directory = ctx.context.require_under_runs(record["run_directory"])
+    summary_path = run_directory / "summary.json"
+    if not summary_path.is_file():
+        raise FileNotFoundError(f"IRO summary is unavailable: {summary_path}")
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    artifacts = ctx.context.experiment_store.artifacts_for("experiment", run_id)
+    return {
+        "run_id": run_id,
+        "scene_id": summary["scene_id"],
+        "scene_digest": summary["scene_digest"],
+        "extension_version": summary["extension_version"],
+        "api_key_used": summary["api_key_used"],
+        "output_counts": summary["output_counts"],
+        "image_refs": [item["path"] for item in artifacts if item["kind"] == "image"],
+        "evidence_scope": summary["evidence_scope"],
+    }
+
+
+@function_tool
+def validate_scenario(
+    ctx: ToolContext[AgentRuntimeContext], scenario: ScenarioSpec
+) -> dict[str, Any]:
+    """Validate and normalize one bounded ScenarioSpec without launching Isaac.
+
+    Pydantic rejects unknown fields, incompatible world/hazard combinations,
+    out-of-bounds physics, poses, asset placements, and controllers before this
+    function executes.
+    """
+    del ctx
+    return {
+        "status": "valid",
+        "scenario_digest": scenario.digest(),
+        "normalized_scenario": scenario.normalized(),
+        "execution_cost": {"isaac_runs": 1, "repeat_count": 1},
+    }
+
+
+@function_tool
+def build_scenario(ctx: ToolContext[AgentRuntimeContext], scenario: ScenarioSpec) -> dict[str, Any]:
+    """Persist one validated, execution-ready ScenarioSpec under the runs directory.
+
+    This performs no simulation and never edits a source USD. The Isaac worker
+    later compiles it into a run-owned derived entry and session layer.
+    """
+    return ScenarioBuildStore(ctx.context.config.runs_root).build(scenario)
+
+
+async def _run_built_scenario(
+    ctx: ToolContext[AgentRuntimeContext], scenario_id: str
+) -> dict[str, Any]:
+    local = ctx.context
+    spec, path, payload = ScenarioBuildStore(local.config.runs_root).load(scenario_id)
+    for record in local.experiment_store.list_experiments():
+        if (
+            record["backend"] == "isaac_sim"
+            and record["scenario"].get("scenario_digest") == payload["scenario_digest"]
+        ):
+            raise ValueError(
+                "this exact validated scenario already has Isaac evidence; change the specification or explain why a repeat is scientifically required"
+            )
+    local.claim_isaac_budget()
+    local.campaign_store.transition_campaign(local.campaign_id, "running")
+    iteration_id = local.campaign_store.begin_iteration(
+        local.campaign_id,
+        {
+            "runtime": "openai_agents_sdk",
+            "scenario_id": scenario_id,
+            "scenario_digest": payload["scenario_digest"],
+            "scenario_spec": spec.normalized(),
+        },
+    )
+    local.campaign_store.transition_iteration(iteration_id, IterationState.RUNNING_ISAAC)
+    try:
+        result = await asyncio.to_thread(
+            local.mine_isaac_service.run_scenario,
+            spec,
+            compiled_spec_path=path,
+        )
+        local.campaign_store.record_isaac_run(iteration_id, result["run_id"])
+        local.campaign_store.transition_iteration(iteration_id, IterationState.RECORDED)
+        return result
+    except Exception as error:
+        local.campaign_store.transition_iteration(
+            iteration_id, IterationState.FAILED, error=str(error)[:1000]
+        )
+        raise
+
+
+@function_tool(timeout=950.0, timeout_behavior="raise_exception")
+async def run_scenario(ctx: ToolContext[AgentRuntimeContext], scenario_id: str) -> dict[str, Any]:
+    """Run one previously built ScenarioSpec in real Isaac Sim.
+
+    The expensive call consumes the ordinary one-Isaac-run-per-research-step
+    budget. Only the immutable built specification identified by scenario_id is
+    accepted; no paths, Python, shell, Docker flags, or USD code are accepted.
+    """
+    return await _run_built_scenario(ctx, scenario_id)
+
+
+@function_tool
+def inspect_simulation_checkpoint(
+    ctx: ToolContext[AgentRuntimeContext],
+    run_id: str,
+    checkpoint: Literal["initial", "final"],
+) -> dict[str, Any]:
+    """Inspect synchronized state and saved sensor references at an initial or final checkpoint."""
+    try:
+        run_id = str(UUID(run_id))
+    except (TypeError, ValueError) as error:
+        raise ValueError("run_id must be a UUID") from error
+    record = ctx.context.experiment_store.get_experiment(run_id)
+    if record is None or record["backend"] != "isaac_sim" or not record.get("run_directory"):
+        raise KeyError(f"indexed Isaac run is unavailable: {run_id}")
+    run_directory = ctx.context.require_under_runs(record["run_directory"])
+    trajectory_path = run_directory / "trajectory.jsonl"
+    if not trajectory_path.is_file():
+        raise FileNotFoundError(f"trajectory is unavailable: {trajectory_path}")
+    records = [
+        json.loads(line) for line in trajectory_path.read_text(encoding="utf-8").splitlines()
+    ]
+    selected = (
+        records[0]["observation"]
+        if checkpoint == "initial"
+        else records[-1]["result"]["observation"]
+    )
+    return {
+        "run_id": run_id,
+        "checkpoint": checkpoint,
+        "simulation_time": selected["simulation_time"],
+        "state": selected["state"],
+        "sensor_refs": selected.get("sensor_refs", []),
+        "sensor_streams": selected.get("sensor_streams", {}),
+        "events": [] if checkpoint == "initial" else records[-1]["result"].get("events", []),
+    }
+
+
+@function_tool
+def compare_isaac_runs(ctx: ToolContext[AgentRuntimeContext], run_ids: list[str]) -> dict[str, Any]:
+    """Compare measured outcomes from two to eight indexed Isaac runs without rerunning them."""
+    if not 2 <= len(run_ids) <= 8:
+        raise ValueError("run_ids must contain between 2 and 8 runs")
+    comparisons = []
+    for raw_run_id in run_ids:
+        try:
+            run_id = str(UUID(raw_run_id))
+        except (TypeError, ValueError) as error:
+            raise ValueError("every run_id must be a UUID") from error
+        record = ctx.context.experiment_store.get_experiment(run_id)
+        if record is None or record["backend"] != "isaac_sim":
+            raise KeyError(f"indexed Isaac run is unavailable: {run_id}")
+        evaluation = record.get("evaluation") or {}
+        comparisons.append(
+            {
+                "run_id": run_id,
+                "world_id": record["scenario"].get("environment"),
+                "scenario_digest": record["scenario"].get("scenario_digest"),
+                "parameters": record["scenario"].get("parameters", {}),
+                "environmental_failure": evaluation.get("environmental_failure"),
+                "failure_type": evaluation.get("failure_type"),
+                "metrics": evaluation.get("metrics", {}),
+            }
+        )
+    return {
+        "comparison_scope": "Isaac/PhysX simulation evidence; not real-world truth",
+        "runs": comparisons,
     }
 
 
@@ -214,9 +496,7 @@ def get_recent_experiments(
 
 
 @function_tool
-def inspect_isaac_run(
-    ctx: ToolContext[AgentRuntimeContext], run_id: str
-) -> dict[str, Any]:
+def inspect_isaac_run(ctx: ToolContext[AgentRuntimeContext], run_id: str) -> dict[str, Any]:
     """Inspect measured physics and visual-readiness evidence for one indexed Isaac UUID run.
 
     Paths come only from the authoritative experiment index and must resolve
@@ -422,7 +702,10 @@ def get_pair_status(ctx: ToolContext[AgentRuntimeContext], pair_id: str) -> dict
         else []
     )
     real_media = [
-        item for item in media if item["kind"] == "video" and Path(item["path"]).is_file()
+        item
+        for item in media
+        if item["kind"] == "video"
+        and Path(item["path"]).is_file()
         and Path(item["path"]).stat().st_size > 0
     ]
     return {
@@ -444,8 +727,18 @@ def _sample_video_frames(video_path: Path, output_directory: Path) -> tuple[Path
     pattern = output_directory / "frame_%02d.png"
     completed = subprocess.run(
         [
-            _ffmpeg_executable(), "-hide_banner", "-loglevel", "error", "-y", "-i", str(video_path),
-            "-vf", "fps=1", "-frames:v", "4", str(pattern),
+            _ffmpeg_executable(),
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            str(video_path),
+            "-vf",
+            "fps=1",
+            "-frames:v",
+            "4",
+            str(pattern),
         ],
         capture_output=True,
         text=True,
@@ -510,22 +803,35 @@ async def assess_and_compare_pair(
     videos = [Path(item["path"]) for item in reactor_artifacts if item["kind"] == "video"]
     videos = [path for path in videos if path.is_file() and path.stat().st_size > 0]
     if not videos:
-        return {"pair_id": pair_id, "status": "needs_human_review", "reason": "no decodable Reactor recording is registered"}
-    isaac_artifacts = ctx.context.experiment_store.artifacts_for(
-        "experiment", pair["isaac_run_id"]
-    )
+        return {
+            "pair_id": pair_id,
+            "status": "needs_human_review",
+            "reason": "no decodable Reactor recording is registered",
+        }
+    isaac_artifacts = ctx.context.experiment_store.artifacts_for("experiment", pair["isaac_run_id"])
     isaac_frames = tuple(
         Path(item["path"])
         for item in isaac_artifacts
-        if item["kind"] == "image" and Path(item["path"]).suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
+        if item["kind"] == "image"
+        and Path(item["path"]).suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
         and Path(item["path"]).is_file()
     )
     if not isaac_frames:
-        return {"pair_id": pair_id, "status": "needs_human_review", "reason": "no real Isaac camera frames are registered"}
+        return {
+            "pair_id": pair_id,
+            "status": "needs_human_review",
+            "reason": "no real Isaac camera frames are registered",
+        }
     reactor = ctx.context.experiment_store.get_experiment(pair["reactor_run_id"])
     if reactor is None or not reactor["run_directory"]:
-        return {"pair_id": pair_id, "status": "needs_human_review", "reason": "Reactor experiment record is incomplete"}
-    output_directory = ctx.context.require_under_runs(reactor["run_directory"]) / "media" / "assessment_frames"
+        return {
+            "pair_id": pair_id,
+            "status": "needs_human_review",
+            "reason": "Reactor experiment record is incomplete",
+        }
+    output_directory = (
+        ctx.context.require_under_runs(reactor["run_directory"]) / "media" / "assessment_frames"
+    )
     try:
         reactor_frames = await asyncio.to_thread(_sample_video_frames, videos[0], output_directory)
         assessment = await asyncio.to_thread(
@@ -533,7 +839,9 @@ async def assess_and_compare_pair(
             VisualComparisonRequest(
                 "structural_collapse",
                 (isaac_frames[0], isaac_frames[-1]) if len(isaac_frames) > 1 else isaac_frames,
-                (reactor_frames[0], reactor_frames[-1]) if len(reactor_frames) > 1 else reactor_frames,
+                (reactor_frames[0], reactor_frames[-1])
+                if len(reactor_frames) > 1
+                else reactor_frames,
             ),
         )
     except Exception as error:  # noqa: BLE001 - all assessor/provider failures require human review
@@ -547,11 +855,17 @@ async def assess_and_compare_pair(
     comparison = PlanCComparator().compare(matched, assessment.world_model_assessment)
     payload["comparison"] = comparison.to_dict()
     payload["visual_assessment_provenance"] = assessment.to_dict()
-    comparison_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    comparison_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     ctx.context.experiment_store.upsert_pair(payload, comparison_path)
     for frame in reactor_frames:
         ctx.context.experiment_store.register_artifact(
-            "experiment", pair["reactor_run_id"], "image", frame, {"source": "ffmpeg_assessment_sample"}
+            "experiment",
+            pair["reactor_run_id"],
+            "image",
+            frame,
+            {"source": "ffmpeg_assessment_sample"},
         )
     ctx.context.campaign_store.record_pair_comparison(
         ctx.context.campaign_id, pair_id, pair["reactor_run_id"], comparison.status.value
@@ -572,12 +886,19 @@ async def assess_and_compare_pair(
 
 AGENT_TOOLS = [
     get_campaign_state,
-    inspect_isaac_capabilities,
+    list_scenario_capabilities,
     inspect_mine_world,
     get_recent_experiments,
     inspect_isaac_run,
-    run_mine_roof_support_experiment,
-    run_warehouse_rack_collapse_experiment,
+    inspect_iro_run,
+    validate_scenario,
+    build_scenario,
+    run_scenario,
+    validate_iro_scene,
+    build_iro_scene,
+    run_iro_scene,
+    inspect_simulation_checkpoint,
+    compare_isaac_runs,
     prepare_reactor_comparison,
     get_pair_status,
     assess_and_compare_pair,
