@@ -226,6 +226,7 @@ class MineIsaacToolService:
             "collapse_criterion": summary["collapse_criterion"],
             "rover_pose_before": summary["rover_pose_before"],
             "rover_pose_after": summary["rover_pose_after"],
+            "controller_evidence": summary.get("controller_evidence"),
             "artifact_directory": str(run_directory),
             "camera_frame_count": len(summary["camera_frames"]),
             "camera_frame_count_by_role": summary.get("camera_frame_count_by_role", {}),

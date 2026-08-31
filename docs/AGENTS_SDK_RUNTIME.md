@@ -300,7 +300,8 @@ bounded route; it does not claim full-cave collision or general navigation.
 `agent_runtime/scenario_spec.py` is the model-facing experiment language. It
 currently exposes three allowlisted worlds, their compatible roof-support or
 rack-collapse template, Nova Carter's `fixed_velocity` differential-wheel
-controller, bounded linear/angular commands, bounded robot/support offsets,
+controller through a registered simulator-rate adapter, bounded linear/angular
+commands, bounded robot/support offsets,
 support and falling-body masses, support friction, three camera presets, three
 lighting presets, and up to four allowlisted collision-enabled box props inside
 world-specific placement regions. Unknown fields and incompatible combinations
@@ -358,7 +359,7 @@ must be deliberately added to the schema and receive live acceptance.
 This section must be updated with every material harness addition so a new
 session can resume without reconstructing architecture decisions.
 
-Current branch and runtime state on 2026-08-27:
+Current branch and runtime state on 2026-08-31:
 
 - Checkout: `/home/ubuntu/physical-ai-failure-agents-sdk`; branch:
   `agents-sdk-harness`; push target: `origin/agents-sdk-harness`.
@@ -368,6 +369,10 @@ Current branch and runtime state on 2026-08-27:
 - Accepted physical spec run: `6436fab1-dc15-45cb-ba96-debab712f15c`.
 - Accepted network-isolated keyless IRO run:
   `d8c7717a-1ac0-48e1-95c9-bf3c4170257c`.
+- The first controller-registry cycle is accepted. The `fixed_velocity` adapter
+  owns command generation and emits a per-step trace plus normalized termination
+  evidence. Live run `eda39916-9959-40b3-98fd-24af2fa7a73d` executed 60 commands
+  with the expected asymmetric 1.78/2.22 rad/s targets and measured rover motion.
 - Generated evidence and SQLite state remain below ignored `runs/`; source,
   tests, and this handoff are committed. Never commit runs, media, caches, `.env`,
   or keys.
@@ -375,14 +380,13 @@ Current branch and runtime state on 2026-08-27:
   generic physical and IRO routes; physical RTX preset/dynamic-prop coverage;
   and the post-camera-fix Reactor comparison.
 
-The next planned addition is the controller registry. Preserve the separation
-between experiment-level agent decisions and simulator-rate control:
+The next planned addition is a bounded `goal_pose` registry entry. Preserve the
+separation between experiment-level agent decisions and simulator-rate control:
 
-1. Define a typed `ControllerSpec` discriminated union and a registry whose
-   capability entries report `executable`, `unavailable`, or `degraded` with a
-   reason and version.
-2. Keep `fixed_velocity` as the accepted baseline adapter. Add navigation first
-   (bounded goal pose/path, timeout, tolerances, collision/stuck termination),
+1. Extend the typed `ControllerSpec` to a discriminated union and keep registry
+   capability entries explicit about accepted and unavailable adapters.
+2. Keep `fixed_velocity` as the accepted baseline adapter. Add bounded goal pose
+   next (target, timeout, tolerances, and stuck termination),
    then register VLA, RL-policy, and ROS adapters only when their packages,
    model/topic contracts, observation/action rates, and live acceptance exist.
 3. The research agent selects controller ID, objective, checkpoints, and stop
@@ -395,7 +399,7 @@ between experiment-level agent decisions and simulator-rate control:
    autonomous controller path is accepted. Never stream simulator-rate control
    through ordinary model tool calls.
 
-Before controller work, rerun `.venv/bin/ruff check .` and
+Before further controller work, rerun `.venv/bin/ruff check .` and
 `.venv/bin/pytest -q`, inspect this document plus `AGENTS.md`, and verify the
 installed Isaac APIs for the exact 6.0.1 image rather than assuming a newer
 Isaac Lab/ROS contract.

@@ -37,6 +37,23 @@ Before architecture or runtime changes, read:
 - Hooks may persist lifecycle metadata and compact tool results, never hidden
   chain-of-thought.
 
+## Iteration discipline and durable project memory
+
+- Make material changes in bounded cycles: state the hypothesis and acceptance
+  criteria, implement the smallest modular change, test it, and record a
+  keep/revise/remove decision using evidence and user feedback.
+- Remove rejected or superseded paths instead of accumulating inactive,
+  unvalidated code. Keep experimental components behind replaceable module
+  boundaries when practical.
+- Append each material cycle, in UTC, to `docs/PROJECT_LOG.md`, including its
+  timing, changes, tests and live evidence, failures, decision, and Git
+  checkpoint. Never put secrets or generated media in the log.
+- Maintain `docs/AGENTS_SDK_RUNTIME.md` as the curated statement of current
+  architecture, capabilities, limitations, and acceptance status. Correct stale
+  claims after each material cycle; the chronological log does not replace it.
+- When authorized, create and push a recoverable Git checkpoint after an
+  accepted cycle. A commit is not evidence that a simulator or model path works.
+
 ## Testing
 
 Run focused tests and lint for every change. Unit tests do not establish live

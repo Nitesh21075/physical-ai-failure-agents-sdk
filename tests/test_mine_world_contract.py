@@ -5,6 +5,11 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
+from harness.controllers import (
+    ControllerObservation,
+    create_controller_adapter,
+    differential_wheel_targets_radps,
+)
 from harness.mine_world import (
     TRACKING_CAMERA_PATH,
     MineRoverExperiment,
@@ -13,6 +18,32 @@ from harness.mine_world import (
     select_wheel_dofs,
     write_reactor_seed_manifest,
 )
+
+
+def test_fixed_velocity_registry_preserves_differential_drive_commands():
+    adapter = create_controller_adapter(
+        {
+            "controller_id": "fixed_velocity",
+            "linear_velocity_mps": 0.25,
+            "angular_velocity_radps": 0.1,
+            "control_steps": 60,
+        }
+    )
+    observation = ControllerObservation((0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0))
+    command = adapter.command(observation)
+    left, right = differential_wheel_targets_radps(
+        command, wheel_radius_m=0.125, wheel_base_m=0.55
+    )
+
+    assert adapter.controller_id == "fixed_velocity"
+    assert left == pytest.approx(1.78)
+    assert right == pytest.approx(2.22)
+    assert adapter.status(observation, control_steps_executed=59).terminate is False
+    status = adapter.status(observation, control_steps_executed=60)
+    assert status.terminate is True
+    assert status.termination_reason == "control_steps_completed"
+    with pytest.raises(ValueError, match="not registered"):
+        create_controller_adapter({"controller_id": "arbitrary_python"})
 
 
 def test_select_wheel_dofs_uses_loaded_names_not_a_hardcoded_robot_layout():

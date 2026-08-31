@@ -18,6 +18,12 @@ from uuid import uuid4
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+from harness.controllers import (
+    ControllerObservation,
+    create_controller_adapter,
+    differential_wheel_targets_radps,
+    status_dict,
+)
 from harness.mine_world import (
     EGO_CAMERA_PATH,
     REACTOR_SEED_CAMERA_ROLE,
@@ -259,6 +265,14 @@ def _world_pose(prim: object) -> tuple[object, object]:
     return positions.numpy()[0].copy(), orientations.numpy()[0].copy()
 
 
+def _controller_observation(rover: object) -> ControllerObservation:
+    position, orientation = _world_pose(rover)
+    return ControllerObservation(
+        position_xyz_m=tuple(float(value) for value in position.tolist()),
+        orientation_quaternion_wxyz=tuple(float(value) for value in orientation.tolist()),
+    )
+
+
 def _rotate_vector(quaternion_wxyz: object, vector_xyz: object) -> object:
     """Rotate one XYZ vector by a WXYZ quaternion without simulator helpers."""
     import numpy as np
@@ -406,6 +420,7 @@ def _write_standard_artifacts(
     preferred_camera_role: str,
     scenario_spec: dict[str, object] | None = None,
     scenario_digest: str | None = None,
+    controller_evidence: dict[str, object] | None = None,
 ) -> None:
     scenario = {
         "environment": experiment.world_id,
@@ -439,6 +454,7 @@ def _write_standard_artifacts(
             - after["beam"]["position_xyz_m"][2],
             "collapse_criterion": "beam vertical drop > 0.8 m",
             "contact_evidence": "support displacement after wheel-actuated rover approach",
+            "controller": controller_evidence,
         },
     }
     metadata = {
@@ -465,9 +481,19 @@ def _write_standard_artifacts(
                 "parameters": scenario["parameters"],
             },
             "result": {
-                "simulation_time": experiment.drive.control_steps / 60.0,
+                "simulation_time": (
+                    (controller_evidence or {}).get(
+                        "control_steps_executed", experiment.drive.control_steps
+                    )
+                    / 60.0
+                ),
                 "observation": {
-                    "simulation_time": experiment.drive.control_steps / 60.0,
+                    "simulation_time": (
+                        (controller_evidence or {}).get(
+                            "control_steps_executed", experiment.drive.control_steps
+                        )
+                        / 60.0
+                    ),
                     "state": after,
                     "sensor_refs": evidence_refs[-1:],
                     "sensor_streams": {role: refs[-1:] for role, refs in sensor_streams.items()},
@@ -623,6 +649,17 @@ def main() -> int:
         camera_resolution=(args.camera_height, args.camera_width),
         camera_tick_rate_hz=args.camera_tick_rate_hz,
     )
+    controller_spec = (
+        scenario_spec["controller"]
+        if scenario_spec is not None
+        else {
+            "controller_id": "fixed_velocity",
+            "linear_velocity_mps": args.linear_velocity_mps,
+            "angular_velocity_radps": args.angular_velocity_radps,
+            "control_steps": args.control_steps,
+        }
+    )
+    controller = create_controller_adapter(controller_spec)
     run_directory = args.runs_dir / run_id
     run_directory.mkdir(parents=True, exist_ok=False)
     derived_stage = _write_derived_stage(args.stage, run_directory)
@@ -742,18 +779,6 @@ def main() -> int:
             flush=True,
         )
         wheel_indices = rover.get_dof_indices(left_dofs + right_dofs)
-        left_velocity = (
-            experiment.drive.linear_velocity_mps
-            - experiment.drive.angular_velocity_radps * args.wheel_base_m / 2
-        ) / args.wheel_radius_m
-        right_velocity = (
-            experiment.drive.linear_velocity_mps
-            + experiment.drive.angular_velocity_radps * args.wheel_base_m / 2
-        ) / args.wheel_radius_m
-        wheel_targets = np.array(
-            [[left_velocity] * len(left_dofs) + [right_velocity] * len(right_dofs)],
-            dtype=np.float32,
-        )
         start_pose = dict(zone["experiment_start_pose"])
         if scenario_spec is not None:
             start_offset = scenario_spec["robot"]["start_offset_xyz_m"]
@@ -786,7 +811,7 @@ def main() -> int:
                 ),
                 orientations=np.array([support_orientation], dtype=np.float32),
             )
-        zero_targets = np.zeros_like(wheel_targets)
+        zero_targets = np.zeros((1, len(left_dofs) + len(right_dofs)), dtype=np.float32)
         for _ in range(30):
             rover.set_dof_velocity_targets(zero_targets, dof_indices=wheel_indices)
             app.update()
@@ -908,9 +933,47 @@ def main() -> int:
             + json.dumps(pre_actuation_stability_gate, sort_keys=True),
         )
         camera_frames: dict[str, list[Path]] = {role: [] for role in ("ego", "tracking", "witness")}
-        for step in range(experiment.drive.control_steps):
+        controller_trace: list[dict[str, object]] = []
+        controller_status = controller.status(
+            _controller_observation(rover), control_steps_executed=0
+        )
+        left_velocity = 0.0
+        right_velocity = 0.0
+        for step in range(controller.max_control_steps):
+            observation = _controller_observation(rover)
+            command = controller.command(observation)
+            left_velocity, right_velocity = differential_wheel_targets_radps(
+                command,
+                wheel_radius_m=args.wheel_radius_m,
+                wheel_base_m=args.wheel_base_m,
+            )
+            wheel_targets = np.array(
+                [[left_velocity] * len(left_dofs) + [right_velocity] * len(right_dofs)],
+                dtype=np.float32,
+            )
             rover.set_dof_velocity_targets(wheel_targets, dof_indices=wheel_indices)
             app.update()
+            resulting_observation = _controller_observation(rover)
+            controller_status = controller.status(
+                resulting_observation, control_steps_executed=step + 1
+            )
+            controller_trace.append(
+                {
+                    "control_step": step,
+                    "observation": {
+                        "position_xyz_m": observation.position_xyz_m,
+                        "orientation_quaternion_wxyz": observation.orientation_quaternion_wxyz,
+                    },
+                    "command": {
+                        "linear_velocity_mps": command.linear_velocity_mps,
+                        "angular_velocity_radps": command.angular_velocity_radps,
+                        "left_wheel_velocity_radps": left_velocity,
+                        "right_wheel_velocity_radps": right_velocity,
+                    },
+                    "resulting_position_xyz_m": resulting_observation.position_xyz_m,
+                    "status": status_dict(controller_status),
+                }
+            )
             if camera_sensors:
                 rover_position, rover_orientation = _world_pose(rover)
                 ego_eye = rover_position + _rotate_vector(rover_orientation, (0.0, 0.0, 1.65))
@@ -935,7 +998,7 @@ def main() -> int:
                         orientations=np.array([orientation], dtype=np.float32),
                     )
             if camera_sensors and (
-                step % args.capture_every == 0 or step == experiment.drive.control_steps - 1
+                step % args.capture_every == 0 or controller_status.terminate
             ):
                 pose_record: dict[str, object] = {
                     "control_step": step,
@@ -967,6 +1030,25 @@ def main() -> int:
                         ],
                     }
                 camera_pose_timeline.append(pose_record)
+            if controller_status.terminate:
+                break
+        _require(controller_status.terminate, "controller exhausted without a termination status")
+        controller_trace_path = run_directory / "controller_trace.jsonl"
+        controller_trace_path.write_text(
+            "".join(json.dumps(item, sort_keys=True) + "\n" for item in controller_trace),
+            encoding="utf-8",
+        )
+        controller_evidence = {
+            "controller_id": controller.controller_id,
+            "control_steps_executed": len(controller_trace),
+            "termination_reason": controller_status.termination_reason,
+            "goal_reached": controller_status.goal_reached,
+            "final_position_error_m": controller_status.position_error_m,
+            "final_heading_error_rad": controller_status.heading_error_rad,
+            "last_command": controller_trace[-1]["command"],
+            "trace_path": str(controller_trace_path),
+            "safety_interventions": [],
+        }
         rover_pose_after = _as_pose(rover)
         after = {
             "rover": {"position_xyz_m": rover_pose_after},
@@ -1084,6 +1166,7 @@ def main() -> int:
             preferred_camera_role=preferred_camera_role,
             scenario_spec=scenario_spec,
             scenario_digest=scenario_digest,
+            controller_evidence=controller_evidence,
         )
         camera_streams = {
             role: {
@@ -1135,6 +1218,7 @@ def main() -> int:
             "left_wheel_dofs": left_dofs,
             "right_wheel_dofs": right_dofs,
             "wheel_velocity_targets_radps": {"left": left_velocity, "right": right_velocity},
+            "controller_evidence": controller_evidence,
             "rover_pose_before": rover_pose_before,
             "rover_pose_after": rover_pose_after,
             "physical_state_before": before,
