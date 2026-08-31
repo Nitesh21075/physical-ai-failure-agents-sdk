@@ -8,6 +8,7 @@ layer and all RGB/Reactor handoff artifacts live below ``runs/``.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -36,6 +37,10 @@ from harness.mine_world import (
     assess_visual_frame,
     select_wheel_dofs,
     write_reactor_seed_manifest,
+)
+from harness.structural_authoring import (
+    GENERATED_STRUCTURE_ROOT,
+    runtime_zone_for_scenario,
 )
 
 DEFAULT_STAGE = PROJECT_ROOT / "assets" / "worlds" / "mine_v1" / "mine_world.usda"
@@ -123,22 +128,85 @@ def _author_scenario_overrides(stage: object, zone: dict, spec: dict[str, object
     hazard = spec.get("hazard", {})
     support_path = zone["support"]
     falling_body_path = zone.get("primary_falling_body") or zone["beam"]
-    authored: dict[str, object] = {"physics_overrides": {}, "placed_assets": []}
-    for key, prim_path in (
-        ("support_mass_kg", support_path),
-        ("falling_body_mass_kg", falling_body_path),
-    ):
-        value = hazard.get(key)
-        if value is None:
-            continue
-        prim = stage.GetPrimAtPath(prim_path)
-        _require(prim.IsValid(), f"cannot apply {key}; missing prim {prim_path}")
-        UsdPhysics.MassAPI.Apply(prim).CreateMassAttr(float(value)).Set(float(value))
-        authored["physics_overrides"][key] = float(value)
+    authored: dict[str, object] = {
+        "physics_overrides": {},
+        "placed_assets": [],
+        "authored_structure": None,
+    }
+    structure = spec.get("authored_structure")
+    if structure:
+        disabled_root = zone.get("disabled_source_hazard_root")
+        if disabled_root:
+            source_hazard = stage.GetPrimAtPath(disabled_root)
+            _require(source_hazard.IsValid(), f"missing source hazard root {disabled_root}")
+            source_hazard.SetActive(False)
+        stage.DefinePrim(GENERATED_STRUCTURE_ROOT, "Xform")
+        compiled_bodies = []
+        for index, body in enumerate(structure["bodies"]):
+            prim_path = f"{GENERATED_STRUCTURE_ROOT}/{body['body_id']}"
+            cube = UsdGeom.Cube.Define(stage, prim_path)
+            cube.CreateSizeAttr(1.0)
+            cube.CreateDisplayColorAttr(
+                [Gf.Vec3f(*_bounded_vector(body["display_color_rgb"], name="body color"))]
+            )
+            xform = UsdGeom.Xformable(cube)
+            xform.AddTranslateOp().Set(
+                Gf.Vec3d(*_bounded_vector(body["position_xyz_m"], name="body position"))
+            )
+            xform.AddRotateXYZOp().Set(
+                Gf.Vec3f(*_bounded_vector(body["rotation_rpy_deg"], name="body rotation"))
+            )
+            xform.AddScaleOp().Set(
+                Gf.Vec3f(*_bounded_vector(body["dimensions_xyz_m"], name="body dimensions"))
+            )
+            UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
+            if body["physics"] == "dynamic":
+                UsdPhysics.RigidBodyAPI.Apply(cube.GetPrim())
+                UsdPhysics.MassAPI.Apply(cube.GetPrim()).CreateMassAttr(
+                    float(body["mass_kg"])
+                ).Set(float(body["mass_kg"]))
+            material = UsdShade.Material.Define(
+                stage, f"/World/Experiment/Materials/StructuralMaterial_{index:02d}"
+            )
+            physics_material = UsdPhysics.MaterialAPI.Apply(material.GetPrim())
+            friction = float(body["friction"])
+            physics_material.CreateStaticFrictionAttr(friction).Set(friction)
+            physics_material.CreateDynamicFrictionAttr(friction).Set(friction)
+            UsdShade.MaterialBindingAPI.Apply(cube.GetPrim()).Bind(
+                material,
+                bindingStrength=UsdShade.Tokens.strongerThanDescendants,
+                materialPurpose="physics",
+            )
+            compiled_bodies.append(
+                {
+                    "body_id": body["body_id"],
+                    "semantic_role": body["semantic_role"],
+                    "prim": prim_path,
+                    "physics": body["physics"],
+                }
+            )
+        authored["authored_structure"] = {
+            "assembly_id": structure["assembly_id"],
+            "root_prim": GENERATED_STRUCTURE_ROOT,
+            "disabled_source_hazard_root": disabled_root,
+            "bodies": compiled_bodies,
+        }
+    if not structure:
+        for key, prim_path in (
+            ("support_mass_kg", support_path),
+            ("falling_body_mass_kg", falling_body_path),
+        ):
+            value = hazard.get(key)
+            if value is None:
+                continue
+            prim = stage.GetPrimAtPath(prim_path)
+            _require(prim.IsValid(), f"cannot apply {key}; missing prim {prim_path}")
+            UsdPhysics.MassAPI.Apply(prim).CreateMassAttr(float(value)).Set(float(value))
+            authored["physics_overrides"][key] = float(value)
 
     static_friction = hazard.get("support_static_friction")
     dynamic_friction = hazard.get("support_dynamic_friction")
-    if static_friction is not None or dynamic_friction is not None:
+    if not structure and (static_friction is not None or dynamic_friction is not None):
         if static_friction is None:
             static_friction = dynamic_friction
         if dynamic_friction is None:
@@ -417,6 +485,7 @@ def _write_standard_artifacts(
     failure_zone: str,
     task: str,
     failure_type: str,
+    collapse_threshold_m: float,
     preferred_camera_role: str,
     scenario_spec: dict[str, object] | None = None,
     scenario_digest: str | None = None,
@@ -437,6 +506,8 @@ def _write_standard_artifacts(
         "scenario_spec": scenario_spec,
         "scenario_digest": scenario_digest,
     }
+    if scenario_spec is not None and scenario_spec.get("authored_structure") is not None:
+        scenario["parameters"]["authored_structure"] = scenario_spec["authored_structure"]
     preferred_frames = camera_frames.get(preferred_camera_role, [])
     evidence_refs = [str(path) for path in preferred_frames]
     sensor_streams = {role: [str(path) for path in paths] for role, paths in camera_frames.items()}
@@ -452,8 +523,14 @@ def _write_standard_artifacts(
             "beam_displacement_m": beam_displacement_m,
             "beam_vertical_drop_m": before["beam"]["position_xyz_m"][2]
             - after["beam"]["position_xyz_m"][2],
-            "collapse_criterion": "beam vertical drop > 0.8 m",
-            "contact_evidence": "support displacement after wheel-actuated rover approach",
+            "collapse_criterion": (
+                f"primary falling body vertical drop > {collapse_threshold_m} m"
+            ),
+            "contact_evidence": {
+                "status": "not_instrumented",
+                "interaction_proxy": "measured support displacement after wheel-actuated approach",
+                "support_displacement_m": support_displacement_m,
+            },
             "controller": controller_evidence,
         },
     }
@@ -603,6 +680,7 @@ def main() -> int:
     scenario_spec, scenario_digest = _load_compiled_scenario(
         args.scenario_spec, world_id=world_id, failure_zone=args.failure_zone
     )
+    zone = runtime_zone_for_scenario(zone, scenario_spec)
     if scenario_spec is not None:
         controller = scenario_spec["controller"]
         sensors = scenario_spec["sensors"]
@@ -669,6 +747,7 @@ def main() -> int:
     controller = create_controller_adapter(controller_spec)
     run_directory = args.runs_dir / run_id
     run_directory.mkdir(parents=True, exist_ok=False)
+    source_stage_sha256_before = hashlib.sha256(args.stage.read_bytes()).hexdigest()
     derived_stage = _write_derived_stage(args.stage, run_directory)
     print(f"mine rover: prepared derived run directory {run_directory}", flush=True)
 
@@ -1072,6 +1151,11 @@ def main() -> int:
         timeline.stop()
         session_path = run_directory / "mine_rover_session.usda"
         session_layer.Export(str(session_path))
+        source_stage_sha256_after = hashlib.sha256(args.stage.read_bytes()).hexdigest()
+        _require(
+            source_stage_sha256_after == source_stage_sha256_before,
+            "immutable source stage changed during the run",
+        )
         seed_manifest = None
         visual_quality: dict[str, list[dict[str, object]]] = {
             role: [assess_visual_frame(path) for path in paths]
@@ -1170,6 +1254,7 @@ def main() -> int:
             failure_zone=args.failure_zone,
             task=zone.get("task", "mine_roof_support_contact"),
             failure_type=zone.get("failure_type", "structural_collapse"),
+            collapse_threshold_m=collapse_threshold_m,
             preferred_camera_role=preferred_camera_role,
             scenario_spec=scenario_spec,
             scenario_digest=scenario_digest,
@@ -1241,6 +1326,8 @@ def main() -> int:
             "collapse_criterion": f"primary falling body vertical drop > {collapse_threshold_m} m",
             "reactor_seed_manifest": str(seed_manifest),
             "source_stage_unchanged": True,
+            "source_stage_sha256_before": source_stage_sha256_before,
+            "source_stage_sha256_after": source_stage_sha256_after,
             "scenario_digest": scenario_digest,
             "scenario_spec": scenario_spec,
             "authored_scenario_overrides": authored_scenario_overrides,

@@ -10,8 +10,9 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID
 
-from agents import function_tool
+from agents import FunctionTool, function_tool
 from agents.tool_context import ToolContext
+from pydantic import ValidationError
 
 from harness.agent_runtime.context import AgentRuntimeContext
 from harness.agent_runtime.iro_spec import IROBuildStore, IROSceneSpec, iro_capability_catalog
@@ -307,7 +308,7 @@ def inspect_iro_run(ctx: ToolContext[AgentRuntimeContext], run_id: str) -> dict[
 
 
 @function_tool
-def validate_scenario(
+def _validate_scenario_schema(
     ctx: ToolContext[AgentRuntimeContext], scenario: ScenarioSpec
 ) -> dict[str, Any]:
     """Validate and normalize one bounded ScenarioSpec without launching Isaac.
@@ -323,6 +324,46 @@ def validate_scenario(
         "normalized_scenario": scenario.normalized(),
         "execution_cost": {"isaac_runs": 1, "repeat_count": 1},
     }
+
+
+async def _validate_scenario_with_diagnostics(
+    ctx: ToolContext[AgentRuntimeContext], arguments: str
+) -> str:
+    """Keep the strict schema while returning safe, actionable semantic errors."""
+    del ctx
+    try:
+        payload = json.loads(arguments)
+        if not isinstance(payload, dict) or not isinstance(payload.get("scenario"), dict):
+            raise TypeError("arguments must contain one scenario object")
+        scenario = ScenarioSpec.model_validate(payload["scenario"])
+    except ValidationError as error:
+        errors = [
+            {
+                "path": ".".join(str(part) for part in item["loc"]),
+                "message": item["msg"],
+            }
+            for item in error.errors(include_url=False, include_input=False)
+        ]
+        return json.dumps({"status": "invalid", "validation_errors": errors})
+    except (json.JSONDecodeError, TypeError, ValueError) as error:
+        return json.dumps({"status": "invalid", "validation_errors": [{"message": str(error)}]})
+    return json.dumps(
+        {
+            "status": "valid",
+            "scenario_digest": scenario.digest(),
+            "normalized_scenario": scenario.normalized(),
+            "execution_cost": {"isaac_runs": 1, "repeat_count": 1},
+        }
+    )
+
+
+validate_scenario = FunctionTool(
+    name="validate_scenario",
+    description=_validate_scenario_schema.description,
+    params_json_schema=_validate_scenario_schema.params_json_schema,
+    on_invoke_tool=_validate_scenario_with_diagnostics,
+    strict_json_schema=True,
+)
 
 
 @function_tool
@@ -531,6 +572,9 @@ def inspect_isaac_run(ctx: ToolContext[AgentRuntimeContext], run_id: str) -> dic
         "rover_pose_before": summary.get("rover_pose_before"),
         "rover_pose_after": summary.get("rover_pose_after"),
         "source_stage_unchanged": summary.get("source_stage_unchanged"),
+        "source_stage_sha256_before": summary.get("source_stage_sha256_before"),
+        "source_stage_sha256_after": summary.get("source_stage_sha256_after"),
+        "authored_scenario_overrides": summary.get("authored_scenario_overrides"),
         "reactor_seed_available": bool(summary.get("reactor_seed_manifest")),
     }
 

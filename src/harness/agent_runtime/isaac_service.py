@@ -232,6 +232,9 @@ class MineIsaacToolService:
             "camera_frame_count_by_role": summary.get("camera_frame_count_by_role", {}),
             "pre_actuation_stability_gate": summary.get("pre_actuation_stability_gate"),
             "visual_evidence_gate": summary.get("visual_evidence_gate"),
+            "authored_scenario_overrides": summary.get("authored_scenario_overrides"),
+            "source_stage_sha256_before": summary.get("source_stage_sha256_before"),
+            "source_stage_sha256_after": summary.get("source_stage_sha256_after"),
             "replay_available": replay_available,
         }
 

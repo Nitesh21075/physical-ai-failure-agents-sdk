@@ -54,7 +54,7 @@ Its exact instruction text is:
 > 5. Reactor is neural-world visual evidence, not physical ground truth.
 > 6. A disagreement is only a CANDIDATE DISCREPANCY.
 > 7. Never fabricate experiments, files, frames, tool outputs, or measurements.
-> 8. Prefer information-gaining experiments over arbitrary destruction and search near failure boundaries when possible. Use the validated ScenarioSpec workflow: validate_scenario, build_scenario, then run_scenario. Source worlds are immutable; all overrides and approved props belong to a run-owned session layer.
+> 8. Prefer information-gaining experiments over arbitrary destruction and search near failure boundaries when possible. Use the validated ScenarioSpec workflow: validate_scenario, build_scenario, then run_scenario. Source worlds are immutable; all overrides, approved props, and experimental authored structures belong to a run-owned session layer. For authored structures, choose bounded named bodies and physical roles; never invent USD paths or claim stability before a real run.
 > 9. In one top-level research step, execute at most one new Isaac experiment unless the user explicitly authorizes a separate multi-experiment mode.
 > 10. Inspect previous experiments before selecting a new experiment. Do not repeat a parameter configuration without stating a scientific reason.
 > 11. If Reactor evidence is needed but not captured, prepare the paired Reactor experiment and stop with status waiting_for_reactor.
@@ -175,7 +175,7 @@ result = await Runner.run(
     context=context,
     session=SQLiteSession(campaign_id, db_path=session_database_path),
     hooks=CampaignRunHooks(),
-    max_turns=12,
+    max_turns=20,
     run_config=RunConfig(
         workflow_name="Physical AI Failure Research",
         trace_id=trace_id,
@@ -286,6 +286,7 @@ Post-cleanup evidence collected from 2026-08-24 through 2026-08-31:
 | Warehouse RTX/camera before final geometry revision | PASS | Run `warehouse-danger-final-20260825` produced 11 frames for each of ego/tracking/witness and passed exposure, content, semantics, and tracking-geometry gates. It remained stable; the preferred Reactor seed has since been changed to the clearer witness role and the support geometry narrowed. |
 | Revised warehouse collapse plus cameras | TECHNICAL PASS, PRESENTATION FAIL | Combined run `warehouse-danger-collapse-camera-20260825` passed pre-actuation stability and the automated visual gate, captured 31 synchronized frames per role, and measured a 2.936 m beam drop. Human frame review found the witness view overlit and visually sparse with little of the native warehouse visible; it is not yet a worthwhile recording shot. |
 | Live Agents SDK selection of generic ScenarioSpec route | PASS | GPT-5.6 Luna campaigns `ccb7258c-2965-4724-bf90-f97cafb68fc3` and `2d4a333d-3eb8-4888-b3ad-5a59cf079242` each discovered capabilities/evidence and completed model-selected `validate` → `build` → real `run`. Runs `1b44e66a-41b5-4188-a116-03244cee27f9` and `835761ff-21b9-4433-a03e-3e01601480c2` accepted goal-pose and fixed-velocity use respectively. |
+| Experimental model-directed structural authoring | REVISE; COMPILER/RUN PASS, TASK/IMAGE FAIL | GPT-5.6 Terra campaign `cc63665b-ce92-4b84-8df1-0e56b8437f83` autonomously corrected typed geometry errors, validated and built scenario `8ad0a735-9688-45b5-9f15-da610061a46e`, and launched real Isaac run `cd098862-a231-47ab-9774-adb52d522ca8`. The run-owned layer disabled the old rack cell, authored three named collision bodies, passed settling, preserved source hash `d1da146e…095a8c4`, and captured 37 frames per role. It did not achieve the intended failure: support displacement was `0.0000010 m`, platform vertical drop was `-0.00350 m`, and the witness content gate failed. No Reactor pair was prepared. |
 | Live Agents SDK selection of generic IROSceneSpec route | PENDING | The corrected schema is now accepted as part of the common tool surface and direct IRO execution is accepted, but a model-selected IRO `validate` → `build` → `run` campaign has not yet been run. |
 
 `mine_v2_subt` is a distinct hybrid stage, not a replacement for `mine_v1`.
@@ -308,6 +309,20 @@ camera presets, three
 lighting presets, and up to four allowlisted collision-enabled box props inside
 world-specific placement regions. Unknown fields and incompatible combinations
 are rejected. Repeat count is fixed to one.
+
+On `experiment/model-directed-usd-authoring-v1`, ScenarioSpec also has an
+experimental `authored_structure` assembly for `warehouse_danger_v1`. The model
+may describe 3–10 named cuboids with bounded pose, dimensions, color, mass,
+friction, static/dynamic physics, and semantic role. Exactly one dynamic
+`impact_support`, one dynamic `falling_body`, and at least one secondary support
+are required. Geometry validation checks rover-route alignment and initial
+support contact. Prim paths are compiler-owned below
+`/World/Experiment/GeneratedStructure`; the accepted rack cell is disabled only
+in the run session layer. This is compositional primitive authoring, not raw USD,
+arbitrary assets, joints, meshes, or general fracture. Validation errors are
+returned to the model as bounded field/geometry diagnostics. The live run proves
+that this compiler path executes, not that the first generated structure
+collapses reliably.
 
 `build_scenario` stores a normalized specification and SHA-256 digest below
 `runs/scenario-builds/`. `run_scenario` accepts only its UUID, reloads and
@@ -396,8 +411,18 @@ Current branch and runtime state on 2026-08-31:
   generic IRO route; physical RTX preset/dynamic-prop coverage;
   and the post-camera-fix Reactor comparison.
 - A broader model-directed USD-authoring experiment is recorded in
-  `docs/PROJECT_LOG.md`. It is a proposal only: no authoring adapter or new-world
-  evidence exists yet, and this branch must not be described as accepted.
+  `docs/PROJECT_LOG.md`. Its first live cycle is complete with a **revise**
+  decision. The compiler and real agent-selected Isaac route executed, but the
+  intended collapse and Reactor-quality image did not. This branch must not be
+  described as accepted or merged into the baseline yet.
+- Experimental authored run `cd098862-a231-47ab-9774-adb52d522ca8` retained the
+  generated session layer, controller trace, exact ScenarioSpec/digest, source
+  hashes, body poses, and 37 frames per camera. It was stable; Reactor was
+  correctly skipped because the visual gate failed.
+- Complex structural validation exposed the SDK default's unhelpful generic
+  error. `validate_scenario` now preserves its strict schema while returning
+  safe Pydantic field/geometry diagnostics. The run bound is 20 model/tool turns;
+  the one-Isaac-run limit and campaign budget are unchanged.
 
 The current controller-registry scope is complete: `fixed_velocity` and bounded
 `goal_pose` are accepted. Preserve the separation between experiment-level agent

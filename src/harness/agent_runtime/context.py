@@ -18,7 +18,7 @@ class AgentRuntimeConfig:
     database_path: Path
     session_database_path: Path
     mine_manifest_path: Path
-    max_turns: int = 12
+    max_turns: int = 20
     max_recent_events: int = 12
 
     @classmethod

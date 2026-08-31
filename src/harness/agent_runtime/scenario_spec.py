@@ -18,6 +18,7 @@ class StrictModel(BaseModel):
 
 Vector2 = Annotated[list[float], Field(min_length=2, max_length=2)]
 Vector3 = Annotated[list[float], Field(min_length=3, max_length=3)]
+Color3 = Annotated[list[float], Field(min_length=3, max_length=3)]
 
 
 class WorldId(StrEnum):
@@ -125,6 +126,54 @@ class ApprovedAssetPlacement(StrictModel):
     friction: float = Field(default=0.6, ge=0.05, le=1.5)
 
 
+class StructuralBodySpec(StrictModel):
+    """One compiler-owned cuboid in an experimental structural assembly."""
+
+    body_id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")
+    semantic_role: Literal["impact_support", "support", "falling_body", "load", "obstacle"]
+    position_xyz_m: Vector3
+    dimensions_xyz_m: Vector3
+    rotation_rpy_deg: Vector3 = Field(default_factory=lambda: [0.0, 0.0, 0.0])
+    physics: Literal["static", "dynamic"]
+    mass_kg: float = Field(default=50.0, ge=1.0, le=2000.0)
+    friction: float = Field(default=0.5, ge=0.05, le=1.5)
+    display_color_rgb: Color3 = Field(default_factory=lambda: [0.7, 0.7, 0.7])
+
+    @model_validator(mode="after")
+    def validate_body_geometry(self) -> StructuralBodySpec:
+        if any(value < 0.1 or value > 5.0 for value in self.dimensions_xyz_m):
+            raise ValueError("dimensions_xyz_m values must be within [0.1, 5.0]")
+        if any(abs(value) > 45.0 for value in self.rotation_rpy_deg):
+            raise ValueError("rotation_rpy_deg values must be within [-45, 45]")
+        if any(value < 0.0 or value > 1.0 for value in self.display_color_rgb):
+            raise ValueError("display_color_rgb values must be within [0, 1]")
+        if self.semantic_role in {"impact_support", "falling_body"} and self.physics != "dynamic":
+            raise ValueError(f"{self.semantic_role} must use dynamic physics")
+        return self
+
+
+class StructuralAssemblySpec(StrictModel):
+    """Bounded model-directed structure compiled into a run-owned USD layer."""
+
+    assembly_id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")
+    description: str = Field(min_length=10, max_length=500)
+    bodies: list[StructuralBodySpec] = Field(min_length=3, max_length=10)
+    collapse_threshold_m: float = Field(default=0.5, ge=0.2, le=3.0)
+
+    @model_validator(mode="after")
+    def validate_roles_and_ids(self) -> StructuralAssemblySpec:
+        ids = [body.body_id for body in self.bodies]
+        if len(ids) != len(set(ids)):
+            raise ValueError("structural body_id values must be unique")
+        roles = [body.semantic_role for body in self.bodies]
+        for required in ("impact_support", "falling_body"):
+            if roles.count(required) != 1:
+                raise ValueError(f"structural assembly requires exactly one {required}")
+        if not any(role == "support" for role in roles):
+            raise ValueError("structural assembly requires at least one secondary support")
+        return self
+
+
 class ScenarioSpec(StrictModel):
     """One executable scenario from the allowlisted Isaac scenario language."""
 
@@ -137,6 +186,7 @@ class ScenarioSpec(StrictModel):
     environment: EnvironmentSpec = Field(default_factory=EnvironmentSpec)
     sensors: SensorRigSpec = Field(default_factory=SensorRigSpec)
     placed_assets: list[ApprovedAssetPlacement] = Field(default_factory=list, max_length=4)
+    authored_structure: StructuralAssemblySpec | None = None
     seed: int = Field(default=42, ge=0, le=2_147_483_647)
     repeat_count: Literal[1] = 1
 
@@ -188,6 +238,55 @@ class ScenarioSpec(StrictModel):
             ):
                 raise ValueError(
                     f"placed_assets[{index}] is outside the approved placement region {regions}"
+                )
+        if self.authored_structure is not None:
+            if self.base_world != WorldId.WAREHOUSE_DANGER_V1:
+                raise ValueError("authored_structure is experimental and requires warehouse_danger_v1")
+            if self.placed_assets:
+                raise ValueError("placed_assets cannot be combined with authored_structure")
+            for index, body in enumerate(self.authored_structure.bodies):
+                if any(
+                    not lower <= value <= upper
+                    for value, (lower, upper) in zip(body.position_xyz_m, regions, strict=True)
+                ):
+                    raise ValueError(
+                        f"authored_structure.bodies[{index}] is outside the approved region {regions}"
+                    )
+            impact = next(
+                body
+                for body in self.authored_structure.bodies
+                if body.semantic_role == "impact_support"
+            )
+            falling = next(
+                body
+                for body in self.authored_structure.bodies
+                if body.semantic_role == "falling_body"
+            )
+            supports = [
+                body
+                for body in self.authored_structure.bodies
+                if body.semantic_role in {"impact_support", "support"}
+            ]
+            rover_start_x = self.robot.start_offset_xyz_m[0]
+            rover_start_y = -1.65 + self.robot.start_offset_xyz_m[1]
+            if abs(impact.position_xyz_m[0] - rover_start_x) > 0.6:
+                raise ValueError("impact_support must be aligned within 0.6 m of rover start X")
+            if not 0.6 <= impact.position_xyz_m[1] - rover_start_y <= 3.0:
+                raise ValueError("impact_support must be 0.6-3.0 m ahead of the rover in +Y")
+            falling_bottom = falling.position_xyz_m[2] - falling.dimensions_xyz_m[2] / 2.0
+            contacting_supports = 0
+            for support in supports:
+                support_top = support.position_xyz_m[2] + support.dimensions_xyz_m[2] / 2.0
+                overlaps_xy = all(
+                    abs(support.position_xyz_m[axis] - falling.position_xyz_m[axis])
+                    <= (support.dimensions_xyz_m[axis] + falling.dimensions_xyz_m[axis]) / 2.0
+                    for axis in (0, 1)
+                )
+                if overlaps_xy and abs(support_top - falling_bottom) <= 0.15:
+                    contacting_supports += 1
+            if contacting_supports < 2:
+                raise ValueError(
+                    "falling_body must initially contact impact_support and at least one support"
                 )
         return self
 
@@ -242,6 +341,50 @@ def scenario_capability_catalog(project_root: Path) -> dict:
             "physics_status": manifest.get("failure_zones", {})
             .get(hazard.value, {})
             .get("physics_status"),
+            "model_directed_structural_authoring": (
+                {
+                    "status": "experimental",
+                    "scope": "3-10 compiler-owned cuboids in a run-owned session layer",
+                    "body_physics": ["static", "dynamic"],
+                    "semantic_roles": [
+                        "impact_support",
+                        "support",
+                        "falling_body",
+                        "load",
+                        "obstacle",
+                    ],
+                    "body_fields": {
+                        "required": [
+                            "body_id",
+                            "semantic_role",
+                            "position_xyz_m",
+                            "dimensions_xyz_m",
+                            "rotation_rpy_deg",
+                            "physics",
+                            "mass_kg",
+                            "friction",
+                            "display_color_rgb",
+                        ],
+                        "body_id_pattern": "lowercase letters, digits, and underscores",
+                        "dimensions_xyz_m": [0.1, 5.0],
+                        "rotation_rpy_deg": [-45.0, 45.0],
+                        "mass_kg": [1.0, 2000.0],
+                        "friction": [0.05, 1.5],
+                        "display_color_rgb": [0.0, 1.0],
+                    },
+                    "geometry_contract": [
+                        "impact_support is dynamic and aligned within 0.6 m of rover start X",
+                        "impact_support is 0.6-3.0 m ahead of the rover in +Y",
+                        "falling_body is dynamic and initially contacts impact_support",
+                        "falling_body initially contacts at least one secondary support",
+                    ],
+                    "legacy_hazard_fields": (
+                        "required by ScenarioSpec v1 strict JSON; ignored for authored_structure"
+                    ),
+                }
+                if world_id == WorldId.WAREHOUSE_DANGER_V1
+                else {"status": "unavailable"}
+            ),
         }
     return {
         "scenario_schema_version": "1.0",
@@ -306,6 +449,7 @@ def scenario_capability_catalog(project_root: Path) -> dict:
             "max_placed_assets": 4,
             "ordinary_runs_per_research_step": 1,
             "source_worlds_are_immutable": True,
+            "max_authored_structural_bodies": 10,
         },
     }
 

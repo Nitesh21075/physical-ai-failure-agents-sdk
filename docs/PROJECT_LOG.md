@@ -110,3 +110,58 @@ or removed.
   that need deterministic repair, and remove unsafe or repeatedly invalid
   operations. Do not merge this branch into the accepted harness until its real
   evidence satisfies the stated criteria and the user approves the result.
+
+## 2026-08-31 10:53:00–11:24:05 — Model-directed USD authoring v1, cycle 1
+
+- Hypothesis: GPT-5.6 Terra can use a bounded compositional assembly language to
+  create a previously absent supported platform in a run-owned warehouse layer,
+  drive Nova Carter into a selected support, and produce measured failure plus a
+  Reactor-ready image without raw USD, paths, Python, or shell.
+- Change: added experimental `authored_structure` support for 3–10 named cuboids
+  with bounded pose, size, color, mass, friction, static/dynamic physics, and
+  semantic roles. Trusted code owns generated prim paths, disables the legacy
+  rack only in the session layer, derives evidence cameras/labels, measures the
+  selected impact support and falling body, and records source hashes and the
+  authored-body map. Added safe semantic validation diagnostics and raised the
+  bounded SDK turn limit from 12 to 20; the single-Isaac-run budget is unchanged.
+- Support checks: 44 tests and Ruff pass. These checks do not establish the live
+  result.
+- First real campaign: `ab3f79c8-0eb4-4ee7-ad14-551e6ec2aae4` exposed that
+  Terra's valid JSON conflicted with legacy hazard fields and that the SDK hid
+  the Pydantic reason as `Invalid JSON input`. After revising the contract, the
+  model validated and built scenario `311fcaf7-91b7-47cf-8564-fa94e02d`, but the
+  Isaac worker failed before initialization because a helper under
+  `harness.agent_runtime` imported the absent Agents SDK inside Isaac Python.
+  No run was indexed. The pure helper was moved to simulator-safe
+  `harness.structural_authoring`.
+- Second real campaign: `5305f8d4-abef-4422-901d-c57bcae6192d` exposed a 5 cm
+  geometry-bound violation that Terra could not repair because the SDK still
+  returned only the generic error. `validate_scenario` was converted to a strict
+  custom `FunctionTool` that returns bounded field/geometry errors; a regression
+  test retains this failure.
+- Accepted execution evidence, unsuccessful task outcome: campaign
+  `cc63665b-ce92-4b84-8df1-0e56b8437f83` used the official SDK loop to inspect
+  capabilities/evidence, iteratively correct the returned errors, validate,
+  build scenario `8ad0a735-9688-45b5-9f15-da610061a46e`, and invoke real Isaac
+  run `cd098862-a231-47ab-9774-adb52d522ca8`. The run-owned layer authored one
+  dynamic impact support, one static support, and one dynamic platform; settling
+  passed; source SHA-256 remained `d1da146e…095a8c4`; the fixed controller ran
+  360 steps; and 37 RGB frames per camera were retained.
+- Physical result: stable, not the hypothesized collapse. Support displacement
+  was `0.0000010 m`; platform displacement was `0.03495 m`; vertical drop was
+  `-0.00350 m`, below the `0.5 m` criterion. Contact sensors were not
+  instrumented, so support displacement is recorded only as an interaction
+  proxy. A resumed harness step inspected the final checkpoint and reported the
+  stable result.
+- Visual/Reactor result: semantic visibility passed, but witness content failed.
+  Human inspection found the generated structure and rover visible against an
+  almost entirely black/sparse annex. The harness correctly did not prepare a
+  Reactor pair, so no world-model comparison exists for this cycle.
+- Decision: **REVISE; DO NOT MERGE**. Keep the bounded compiler, immutable-layer
+  boundary, diagnostics, and retained evidence. Revise interaction geometry or
+  controller energy and move/art-direct the experiment into a visible warehouse
+  context before another run. Reproducibility, explicit contact telemetry,
+  Reactor capture/comparison, and a Terra/Luna authoring comparison remain
+  unaccepted.
+- Git: checkpointed on `experiment/model-directed-usd-authoring-v1`; the exact
+  commit is reported with the pushed cycle handoff.

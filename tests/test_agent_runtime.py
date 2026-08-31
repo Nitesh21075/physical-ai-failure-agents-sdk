@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -12,8 +13,10 @@ from harness.agent_runtime.iro_spec import IROBuildStore, IROSceneSpec, compile_
 from harness.agent_runtime.isaac_service import MineIsaacToolService
 from harness.agent_runtime.researcher import create_researcher
 from harness.agent_runtime.scenario_spec import CAMERA_PRESETS, ScenarioBuildStore, ScenarioSpec
+from harness.agent_runtime.tools import validate_scenario
 from harness.persistence.store import ExperimentStore
 from harness.research.campaign import ResearchCampaignStore
+from harness.structural_authoring import runtime_zone_for_scenario
 
 
 def _context(tmp_path: Path, *, budget: int = 2) -> AgentRuntimeContext:
@@ -52,6 +55,10 @@ def test_runs_path_guard(tmp_path: Path) -> None:
     assert context.require_under_runs(context.config.runs_root / "safe.json").name == "safe.json"
     with pytest.raises(ValueError, match="underneath"):
         context.require_under_runs(tmp_path / "outside.json")
+
+
+def test_complex_scenario_loop_has_bounded_recovery_turns(tmp_path: Path) -> None:
+    assert _context(tmp_path).config.max_turns == 20
 
 
 def test_agent_has_only_bounded_research_and_scenario_tools() -> None:
@@ -242,6 +249,119 @@ def test_scenario_spec_accepts_only_bounded_registered_goal_pose() -> None:
         )
 
 
+def _authored_structure_scenario() -> dict:
+    return {
+        "base_world": "warehouse_danger_v1",
+        "hazard": {"template": "rack_collapse"},
+        "robot": {"start_offset_xyz_m": [0.0, 0.0, 0.0]},
+        "controller": {
+            "controller_id": "fixed_velocity",
+            "linear_velocity_mps": 0.8,
+            "control_steps": 450,
+        },
+        "authored_structure": {
+            "assembly_id": "two_pole_platform",
+            "description": "A loaded platform resting on one movable pole and one fixed pole.",
+            "collapse_threshold_m": 0.5,
+            "bodies": [
+                {
+                    "body_id": "movable_pole",
+                    "semantic_role": "impact_support",
+                    "position_xyz_m": [0.0, 0.0, 1.25],
+                    "dimensions_xyz_m": [0.3, 0.4, 2.5],
+                    "physics": "dynamic",
+                    "mass_kg": 45.0,
+                    "friction": 0.1,
+                    "display_color_rgb": [0.95, 0.65, 0.05],
+                },
+                {
+                    "body_id": "fixed_pole",
+                    "semantic_role": "support",
+                    "position_xyz_m": [1.4, 0.0, 1.25],
+                    "dimensions_xyz_m": [0.3, 0.4, 2.5],
+                    "physics": "static",
+                },
+                {
+                    "body_id": "loaded_platform",
+                    "semantic_role": "falling_body",
+                    "position_xyz_m": [0.7, 0.0, 2.65],
+                    "dimensions_xyz_m": [3.2, 1.2, 0.3],
+                    "physics": "dynamic",
+                    "mass_kg": 250.0,
+                    "friction": 0.6,
+                    "display_color_rgb": [0.25, 0.45, 0.85],
+                },
+            ],
+        },
+    }
+
+
+def test_model_directed_structure_is_bounded_and_paths_are_compiler_owned() -> None:
+    spec = ScenarioSpec.model_validate(_authored_structure_scenario())
+    manifest_zone = {
+        "root": "/World/FailureZones/RackCollapseZone",
+        "witness_camera": {"prim": "/World/Sensors/RackCollapseCamera"},
+    }
+    runtime = runtime_zone_for_scenario(manifest_zone, spec.normalized())
+    assert runtime["support"] == "/World/Experiment/GeneratedStructure/movable_pole"
+    assert runtime["primary_falling_body"] == (
+        "/World/Experiment/GeneratedStructure/loaded_platform"
+    )
+    assert runtime["disabled_source_hazard_root"] == manifest_zone["root"]
+    with pytest.raises(ValueError, match="string_pattern_mismatch"):
+        ScenarioSpec.model_validate(
+            {
+                **_authored_structure_scenario(),
+                "authored_structure": {
+                    **_authored_structure_scenario()["authored_structure"],
+                    "bodies": [
+                        {
+                            **_authored_structure_scenario()["authored_structure"]["bodies"][0],
+                            "body_id": "../../unsafe",
+                        },
+                        *_authored_structure_scenario()["authored_structure"]["bodies"][1:],
+                    ],
+                },
+            }
+        )
+
+
+def test_model_directed_structure_rejects_wrong_world_and_missing_roles() -> None:
+    payload = _authored_structure_scenario()
+    with pytest.raises(ValueError, match="requires warehouse_danger_v1"):
+        ScenarioSpec.model_validate(
+            {
+                **payload,
+                "base_world": "mine_v1",
+                "hazard": {"template": "roof_support"},
+            }
+        )
+
+
+def test_validate_scenario_tool_returns_actionable_geometry_errors() -> None:
+    payload = _authored_structure_scenario()
+    payload["authored_structure"]["bodies"][0]["position_xyz_m"][1] = 1.4
+    result = asyncio.run(
+        validate_scenario.on_invoke_tool(None, json.dumps({"scenario": payload}))
+    )
+    parsed = json.loads(result)
+    assert parsed["status"] == "invalid"
+    assert "0.6-3.0 m ahead" in parsed["validation_errors"][0]["message"]
+    bodies = payload["authored_structure"]["bodies"]
+    with pytest.raises(ValueError, match="exactly one falling_body"):
+        ScenarioSpec.model_validate(
+            {
+                **payload,
+                "authored_structure": {
+                    **payload["authored_structure"],
+                    "bodies": [
+                        bodies[0],
+                        bodies[1],
+                        {**bodies[2], "semantic_role": "load"},
+                    ],
+                },
+            }
+        )
 def test_physics_only_keeps_a_valid_dormant_camera_resolution() -> None:
     preset = CAMERA_PRESETS["physics_only"]
     assert preset == {"enabled": False, "height": 180, "width": 320}

@@ -71,8 +71,8 @@ class PairedCaptureService:
                     )
                 if not initial_frame.is_file():
                     raise FileNotFoundError(initial_frame)
-                if seed_manifest.get("camera_role") not in {None, "tracking"}:
-                    raise PairingError("the Reactor seed is not from the tracking evidence camera")
+                if seed_manifest.get("camera_role") not in {None, "ego", "tracking", "witness"}:
+                    raise PairingError("the Reactor seed is not from an accepted evidence camera")
             else:
                 replay = export_isaac_replay(run_directory)
                 initial_frame = Path(replay["preview_frame_paths"][0])
