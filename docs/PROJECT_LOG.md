@@ -76,3 +76,37 @@ or removed.
   pose reaching, not general path planning, obstacle avoidance, or VLA/ROS/RL
   control.
 - Git: recorded by the cycle-2 checkpoint containing this entry.
+
+## 2026-08-31 10:42:27 — Planned experiment: model-directed USD authoring v1
+
+- Status: **PLANNED, NOT YET IMPLEMENTED OR RUN**.
+- Branch: `experiment/model-directed-usd-authoring-v1`, created from accepted
+  harness commit `2a20116`. The accepted `agents-sdk-harness` branch remains the
+  control baseline.
+- Hypothesis: a more capable planning model, initially Terra with Luna retained
+  as a comparison baseline, can direct sufficiently reliable creation and
+  modification of novel physical structures when edits are confined to an
+  experiment-owned warehouse copy or run-owned USD layer.
+- Proposed first task: create a supported platform with multiple poles, direct
+  Nova Carter into one support, measure whether the structure topples, capture
+  Isaac images containing the generated structure, prepare the Reactor seed and
+  prompt, and compare the recorded visual outcome after capture.
+- Experimental interface: add a sandboxed scene-authoring adapter for approved
+  USD/PhysX primitives, rigid bodies, collision shapes, materials, supports and
+  joints. It may edit only a disposable experimental world or run-owned layer;
+  it must not mutate the accepted source warehouse or expose shell, arbitrary
+  filesystem paths, Docker arguments, or unrestricted host Python.
+- Evidence to retain: model/tool trace, exact authored USD/layer and digest,
+  source-world hashes before/after, load diagnostics, settling state, named
+  bodies/joints, controller trace, contacts, final poses, failure classification,
+  camera frames, Reactor prompt/recording, and comparison result.
+- Acceptance criteria: generated scenes load without repair; start from a stable
+  settled state; expose valid collisions and named measurable failure bodies;
+  permit rover interaction; reproduce the classified outcome for the same seed;
+  preserve source hashes; and complete the actual harness-owned Isaac → Reactor
+  → comparison path. Lint, mocks, schema checks, or standalone USD parsing do
+  not count as end-to-end acceptance.
+- Cycle decision rule: keep reliable authoring operations, revise operations
+  that need deterministic repair, and remove unsafe or repeatedly invalid
+  operations. Do not merge this branch into the accepted harness until its real
+  evidence satisfies the stated criteria and the user approves the result.

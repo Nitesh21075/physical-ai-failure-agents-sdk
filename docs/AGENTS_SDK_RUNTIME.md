@@ -365,8 +365,9 @@ session can resume without reconstructing architecture decisions.
 
 Current branch and runtime state on 2026-08-31:
 
-- Checkout: `/home/ubuntu/physical-ai-failure-agents-sdk`; branch:
-  `agents-sdk-harness`; push target: `origin/agents-sdk-harness`.
+- Checkout: `/home/ubuntu/physical-ai-failure-agents-sdk`. Accepted baseline:
+  `agents-sdk-harness` at `2a20116`. Active proposal branch:
+  `experiment/model-directed-usd-authoring-v1`.
 - Physical ScenarioSpec, keyless IROSceneSpec, seventeen Agents SDK tools, one
   shared Isaac budget, digest-checked build stores, and experiment/artifact
   indexing are implemented.
@@ -394,6 +395,9 @@ Current branch and runtime state on 2026-08-31:
 - Remaining acceptance gaps: a model-selected validate/build/run trace for the
   generic IRO route; physical RTX preset/dynamic-prop coverage;
   and the post-camera-fix Reactor comparison.
+- A broader model-directed USD-authoring experiment is recorded in
+  `docs/PROJECT_LOG.md`. It is a proposal only: no authoring adapter or new-world
+  evidence exists yet, and this branch must not be described as accepted.
 
 The current controller-registry scope is complete: `fixed_velocity` and bounded
 `goal_pose` are accepted. Preserve the separation between experiment-level agent
