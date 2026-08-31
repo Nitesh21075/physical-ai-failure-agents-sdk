@@ -78,6 +78,23 @@ def test_agent_has_only_bounded_research_and_scenario_tools() -> None:
     assert not {"shell", "python", "docker", "filesystem"}.intersection(names)
 
 
+def test_agent_tool_array_schemas_are_accepted_function_call_shapes() -> None:
+    def arrays_without_items(value: object) -> list[dict]:
+        if isinstance(value, dict):
+            found = [value] if value.get("type") == "array" and "items" not in value else []
+            return found + [
+                item
+                for child in value.values()
+                for item in arrays_without_items(child)
+            ]
+        if isinstance(value, list):
+            return [item for child in value for item in arrays_without_items(child)]
+        return []
+
+    for tool in create_researcher("test-model").tools:
+        assert arrays_without_items(tool.params_json_schema) == [], tool.name
+
+
 def _iro_scene() -> IROSceneSpec:
     return IROSceneSpec.model_validate(
         {
@@ -185,6 +202,42 @@ def test_scenario_spec_rejects_incompatible_hazard_and_unsafe_placement() -> Non
                         "position_xyz_m": [100.0, 0.0, 1.0],
                     }
                 ],
+            }
+        )
+
+
+def test_scenario_spec_accepts_only_bounded_registered_goal_pose() -> None:
+    base = {
+        "base_world": "mine_v1",
+        "hazard": {"template": "roof_support"},
+        "controller": {
+            "controller_id": "goal_pose",
+            "target_position_xy_m": [24.0, -0.9],
+            "max_control_steps": 300,
+            "stagnation_steps": 120,
+        },
+    }
+    scenario = ScenarioSpec.model_validate(base)
+    assert scenario.controller.controller_id == "goal_pose"
+    with pytest.raises(ValueError, match="outside the approved XY region"):
+        ScenarioSpec.model_validate(
+            {
+                **base,
+                "controller": {
+                    **base["controller"],
+                    "target_position_xy_m": [100.0, -0.9],
+                },
+            }
+        )
+    with pytest.raises(ValueError, match="stagnation_steps"):
+        ScenarioSpec.model_validate(
+            {
+                **base,
+                "controller": {
+                    **base["controller"],
+                    "max_control_steps": 100,
+                    "stagnation_steps": 100,
+                },
             }
         )
 

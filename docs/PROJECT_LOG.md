@@ -34,4 +34,45 @@ or removed.
   `[23.9883709, -1.3813437, ~0]`.
 - Decision: keep. This establishes the registry baseline; it does not establish
   goal navigation or model selection.
-- Git: recorded by the cycle-1 checkpoint containing this entry.
+- Git: `4c6c027` (`Add accepted fixed controller registry`), pushed to
+  `origin/agents-sdk-harness`.
+
+## 2026-08-31 09:20:00–09:52:13 — Cycle 2: bounded goal pose and model use
+
+- Hypothesis: a closed-loop, registry-owned goal-pose adapter can reach a
+  bounded target from measured Isaac pose, and the Agents SDK researcher can
+  discover and use both registered adapters without simulator-rate LLM control.
+- Change: added the discriminated `fixed_velocity | goal_pose` ScenarioSpec,
+  bounded target/tolerances/speeds/timeouts, proportional differential-drive
+  steering, stagnation detection, capability reporting, and common controller
+  evidence. Fixed-length model inputs now use strict-length JSON arrays that
+  remain valid OpenAI function schemas.
+- Support checks: Ruff passed; 41 tests passed, including every model tool schema
+  being free of array definitions without `items`.
+- Direct real output: Isaac run `fc19f0c3-c18a-42d9-9e6a-68b9a28bb692`
+  reached `[24.0, -0.9]` after 141 steps with measured error `0.0989733 m`,
+  terminating `goal_reached` inside the `0.10 m` tolerance.
+- Direct full-pose output: run `1a5e53f0-ac78-4bf2-a5af-5a2b77144a70`
+  reached the same XY target plus heading `1.0 rad` after 183 steps, with
+  `0.0942914 m` position error and `-0.147733 rad` heading error inside the
+  requested `0.10 m`/`0.15 rad` tolerances.
+- Failure and revision: the first real model campaign was rejected by OpenAI
+  before tool execution because tuple-derived function schemas used
+  `prefixItems` but omitted `items`. Local tests had passed and did not establish
+  API acceptance. ScenarioSpec and IROSceneSpec vector fields were revised to
+  strict-length lists, all 17 schemas were audited, and the same campaign path
+  was rerun.
+- Model-selected real outputs: GPT-5.6 Luna campaign
+  `ccb7258c-2965-4724-bf90-f97cafb68fc3` discovered capabilities, inspected
+  prior evidence, validated, built, and ran goal pose; Isaac run
+  `1b44e66a-41b5-4188-a116-03244cee27f9` reached `[24.0, -0.75]` in 168 steps
+  with `0.0992608 m` error, then the model inspected the final checkpoint and
+  reported the result accurately. Campaign
+  `2d4a333d-3eb8-4888-b3ad-5a59cf079242` used the same tool sequence for
+  `fixed_velocity`; run `835761ff-21b9-4433-a03e-3e01601480c2` executed exactly
+  60 steps, moved `0.26899 m`, terminated `control_steps_completed`, and was
+  accurately reported as stable.
+- Decision: keep both adapters and the schema correction. This accepts bounded
+  pose reaching, not general path planning, obstacle avoidance, or VLA/ROS/RL
+  control.
+- Git: recorded by the cycle-2 checkpoint containing this entry.

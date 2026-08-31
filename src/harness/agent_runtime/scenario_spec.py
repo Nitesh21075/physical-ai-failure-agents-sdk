@@ -6,7 +6,7 @@ import hashlib
 import json
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -14,6 +14,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+Vector2 = Annotated[list[float], Field(min_length=2, max_length=2)]
+Vector3 = Annotated[list[float], Field(min_length=3, max_length=3)]
 
 
 class WorldId(StrEnum):
@@ -47,7 +51,7 @@ class AssetId(StrEnum):
 class RobotSpec(StrictModel):
     asset_id: Literal["nova_carter"] = "nova_carter"
     start_pose_preset: Literal["manifest_default"] = "manifest_default"
-    start_offset_xyz_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    start_offset_xyz_m: Vector3 = Field(default_factory=lambda: [0.0, 0.0, 0.0])
 
 
 class FixedVelocityControllerSpec(StrictModel):
@@ -57,9 +61,33 @@ class FixedVelocityControllerSpec(StrictModel):
     control_steps: int = Field(ge=60, le=900)
 
 
+class GoalPoseControllerSpec(StrictModel):
+    controller_id: Literal["goal_pose"] = "goal_pose"
+    target_position_xy_m: Vector2
+    target_heading_rad: float | None = Field(default=None, ge=-3.1416, le=3.1416)
+    max_linear_velocity_mps: float = Field(default=0.3, ge=0.1, le=0.6)
+    max_angular_velocity_radps: float = Field(default=0.6, ge=0.1, le=0.6)
+    position_tolerance_m: float = Field(default=0.1, ge=0.05, le=0.3)
+    heading_tolerance_rad: float = Field(default=0.15, ge=0.05, le=0.5)
+    max_control_steps: int = Field(default=360, ge=60, le=900)
+    stagnation_steps: int = Field(default=120, ge=30, le=240)
+
+    @model_validator(mode="after")
+    def validate_stagnation_window(self) -> GoalPoseControllerSpec:
+        if self.stagnation_steps >= self.max_control_steps:
+            raise ValueError("stagnation_steps must be less than max_control_steps")
+        return self
+
+
+ControllerSpec = Annotated[
+    FixedVelocityControllerSpec | GoalPoseControllerSpec,
+    Field(discriminator="controller_id"),
+]
+
+
 class HazardSpec(StrictModel):
     template: HazardTemplate
-    support_offset_xyz_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    support_offset_xyz_m: Vector3 = Field(default_factory=lambda: [0.0, 0.0, 0.0])
     support_mass_kg: float | None = Field(default=None, ge=1.0, le=500.0)
     falling_body_mass_kg: float | None = Field(default=None, ge=1.0, le=2000.0)
     support_static_friction: float | None = Field(default=None, ge=0.05, le=1.5)
@@ -90,8 +118,8 @@ class SensorRigSpec(StrictModel):
 
 class ApprovedAssetPlacement(StrictModel):
     asset_id: AssetId
-    position_xyz_m: tuple[float, float, float]
-    scale_xyz_m: tuple[float, float, float] = (0.5, 0.5, 0.5)
+    position_xyz_m: Vector3
+    scale_xyz_m: Vector3 = Field(default_factory=lambda: [0.5, 0.5, 0.5])
     dynamic: bool = False
     mass_kg: float = Field(default=20.0, ge=1.0, le=200.0)
     friction: float = Field(default=0.6, ge=0.05, le=1.5)
@@ -105,12 +133,21 @@ class ScenarioSpec(StrictModel):
     base_world: WorldId
     hazard: HazardSpec
     robot: RobotSpec = Field(default_factory=RobotSpec)
-    controller: FixedVelocityControllerSpec
+    controller: ControllerSpec
     environment: EnvironmentSpec = Field(default_factory=EnvironmentSpec)
     sensors: SensorRigSpec = Field(default_factory=SensorRigSpec)
     placed_assets: list[ApprovedAssetPlacement] = Field(default_factory=list, max_length=4)
     seed: int = Field(default=42, ge=0, le=2_147_483_647)
     repeat_count: Literal[1] = 1
+
+    @model_validator(mode="before")
+    @classmethod
+    def preserve_v1_fixed_velocity_specs(cls, value: object) -> object:
+        if isinstance(value, dict) and isinstance(value.get("controller"), dict):
+            controller = value["controller"]
+            if "controller_id" not in controller:
+                value = {**value, "controller": {"controller_id": "fixed_velocity", **controller}}
+        return value
 
     @model_validator(mode="after")
     def validate_compatibility_and_regions(self) -> ScenarioSpec:
@@ -134,6 +171,14 @@ class ScenarioSpec(StrictModel):
             WorldId.MINE_V2_SUBT: ((20.0, 28.0), (-5.0, 5.0), (0.1, 4.0)),
             WorldId.WAREHOUSE_DANGER_V1: ((-5.0, 5.0), (-6.0, 6.0), (0.1, 5.0)),
         }[self.base_world]
+        if isinstance(self.controller, GoalPoseControllerSpec):
+            x_region, y_region, _ = regions
+            target_x, target_y = self.controller.target_position_xy_m
+            if not x_region[0] <= target_x <= x_region[1] or not y_region[0] <= target_y <= y_region[1]:
+                raise ValueError(
+                    "controller.target_position_xy_m is outside the approved XY region "
+                    f"{(x_region, y_region)}"
+                )
         for index, placement in enumerate(self.placed_assets):
             if any(value <= 0.0 or value > 2.0 for value in placement.scale_xyz_m):
                 raise ValueError(f"placed_assets[{index}].scale_xyz_m must be within (0, 2]")
@@ -215,6 +260,23 @@ def scenario_capability_catalog(project_root: Path) -> dict:
                 "linear_velocity_mps": [0.1, 0.8],
                 "angular_velocity_radps": [-0.6, 0.6],
                 "control_steps": [60, 900],
+            },
+            "goal_pose": {
+                "status": "executable",
+                "adapter_version": "1.0",
+                "target_position": "bounded to the selected world's approved XY region",
+                "target_heading_rad": [-3.1416, 3.1416],
+                "max_linear_velocity_mps": [0.1, 0.6],
+                "max_angular_velocity_radps": [0.1, 0.6],
+                "position_tolerance_m": [0.05, 0.3],
+                "heading_tolerance_rad": [0.05, 0.5],
+                "max_control_steps": [60, 900],
+                "stagnation_steps": [30, 240],
+                "termination_reasons": [
+                    "goal_reached",
+                    "stagnation_detected",
+                    "max_control_steps_reached",
+                ],
             },
             "navigation": {"status": "unavailable", "reason": "no navigation adapter registered"},
             "vla": {"status": "unavailable", "reason": "no VLA adapter registered"},

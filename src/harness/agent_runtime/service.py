@@ -41,7 +41,7 @@ class MineFailureResearchService:
             experiment_budget=experiment_budget,
             model_provider="openai_agents_sdk",
             model_name=self.model,
-            capability_version="typed-scenario-spec-v1",
+            capability_version="controller-registry-v1",
             simulator_metadata={"container_image": "nvcr.io/nvidia/isaac-sim:6.0.1"},
         )
 

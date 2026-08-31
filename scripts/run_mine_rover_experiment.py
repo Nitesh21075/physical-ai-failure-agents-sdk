@@ -616,9 +616,16 @@ def main() -> int:
             sensors["preset"]
         ]
         args.capture_every = int(sensors["capture_every_steps"])
-        args.linear_velocity_mps = float(controller["linear_velocity_mps"])
-        args.angular_velocity_radps = float(controller["angular_velocity_radps"])
-        args.control_steps = int(controller["control_steps"])
+        if controller["controller_id"] == "fixed_velocity":
+            args.linear_velocity_mps = float(controller["linear_velocity_mps"])
+            args.angular_velocity_radps = float(controller["angular_velocity_radps"])
+            args.control_steps = int(controller["control_steps"])
+        elif controller["controller_id"] == "goal_pose":
+            args.linear_velocity_mps = float(controller["max_linear_velocity_mps"])
+            args.angular_velocity_radps = 0.0
+            args.control_steps = int(controller["max_control_steps"])
+        else:
+            _require(False, "unsupported registered controller")
         args.seed = int(scenario_spec["seed"])
     support_path = zone.get("support")
     falling_body_path = zone.get("primary_falling_body") or zone.get("beam")

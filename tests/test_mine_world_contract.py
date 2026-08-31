@@ -46,6 +46,36 @@ def test_fixed_velocity_registry_preserves_differential_drive_commands():
         create_controller_adapter({"controller_id": "arbitrary_python"})
 
 
+def test_goal_pose_adapter_drives_toward_goal_and_terminates_on_measured_pose():
+    adapter = create_controller_adapter(
+        {
+            "controller_id": "goal_pose",
+            "target_position_xy_m": [24.0, -0.9],
+            "target_heading_rad": None,
+            "max_linear_velocity_mps": 0.3,
+            "max_angular_velocity_radps": 0.6,
+            "position_tolerance_m": 0.1,
+            "heading_tolerance_rad": 0.15,
+            "max_control_steps": 300,
+            "stagnation_steps": 120,
+        }
+    )
+    facing_positive_y = ControllerObservation(
+        (24.0, -1.65, 0.0), (0.70710678, 0.0, 0.0, 0.70710678)
+    )
+    command = adapter.command(facing_positive_y)
+
+    assert command.linear_velocity_mps == pytest.approx(0.3)
+    assert command.angular_velocity_radps == pytest.approx(0.0, abs=1e-7)
+    reached = adapter.status(
+        ControllerObservation((24.0, -0.95, 0.0), facing_positive_y.orientation_quaternion_wxyz),
+        control_steps_executed=100,
+    )
+    assert reached.terminate is True
+    assert reached.goal_reached is True
+    assert reached.termination_reason == "goal_reached"
+
+
 def test_select_wheel_dofs_uses_loaded_names_not_a_hardcoded_robot_layout():
     left, right = select_wheel_dofs(
         ["caster_joint", "rear_right_wheel_joint", "front_left_wheel_joint", "front_right_wheel_joint", "rear_left_wheel_joint"]

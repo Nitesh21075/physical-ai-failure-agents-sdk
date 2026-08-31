@@ -61,4 +61,12 @@ acceptance: claims about SDK selection, Isaac physics, recording, Reactor, or
 session resume require corresponding real evidence. Record failures honestly
 in `docs/AGENTS_SDK_RUNTIME.md`; do not replace missing evidence with mocks.
 
+Distinguish support checks (lint, unit tests, mocks, schema/import checks, and
+ad-hoc diagnostics) from acceptance of the actual behavior. When the requested
+claim concerns a program, function, integration, simulator, model, or generated
+artifact, run the real in-scope entrypoint with its real dependencies when they
+are available, inspect its output, and retain the observations or artifact/run
+references. Never present a surrogate or debug check as the real result. If the
+real path cannot run, label the claim unaccepted and record the concrete reason.
+
 Inspect installed SDK and Isaac APIs before making version-specific changes.

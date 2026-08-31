@@ -63,7 +63,7 @@ Its exact instruction text is:
 > 14. Treat tool errors and unavailable capabilities honestly. Never translate an authored or intended behavior into observed evidence.
 > 15. Treat offline asset readiness separately from physics readiness. A native remote USD that has not been collected locally is not offline-ready.
 > 16. Treat an automated pixel/semantic gate separately from human presentation readiness. If the capability catalog says art-direction acceptance is pending, do not call that world recording-ready.
-> 17. The fixed_velocity controller owns simulator-rate wheel commands. Do not claim navigation, VLA, RL, or ROS control unless the capability catalog reports a real registered adapter.
+> 17. The registered fixed_velocity and goal_pose adapters own simulator-rate wheel commands. Select them only through ScenarioSpec and use returned termination evidence. Do not claim general navigation, VLA, RL, or ROS control unless the capability catalog reports a real registered adapter.
 > 18. Use inspect_simulation_checkpoint and compare_isaac_runs for measured evidence. A built or authored scenario is not an observed physical outcome until run_scenario succeeds.
 > 19. For bounded synthetic-data scene generation, use validate_iro_scene, build_iro_scene, then run_iro_scene. IRO scenes consume the same Isaac-run budget. Treat their images and annotations as synthetic scene evidence, never as a robot run, structural-failure result, or real-world ground truth.
 
@@ -255,13 +255,13 @@ token counts.
 
 ## Validation status
 
-Post-cleanup evidence collected from 2026-08-24 through 2026-08-27:
+Post-cleanup evidence collected from 2026-08-24 through 2026-08-31:
 
 | Acceptance boundary | Result | Evidence |
 |---|---|---|
 | Lint | PASS | Ruff, all checks passed |
-| Focused regression tests | PASS | 37 tests passed in 3.31 s on 2026-08-27. |
-| Typed ScenarioSpec and Agents SDK schemas | PASS | All seventeen tools construct under `openai-agents 0.22.0`; unit tests cover world/hazard compatibility, placement regions, parameter bounds, build persistence, digest tamper detection, the one-run guard, and absence of shell/Python/filesystem tools. |
+| Focused regression tests | PASS | 41 tests and Ruff passed on 2026-08-31. |
+| Typed ScenarioSpec and Agents SDK schemas | PASS AFTER LIVE FIX | All seventeen tools construct under `openai-agents 0.22.0`. The first real controller campaign exposed tuple-derived array schemas with no `items`, which OpenAI rejected. Strict-length list schemas fixed both ScenarioSpec and IROSceneSpec tools; a regression test audits every tool schema, and two subsequent real campaigns were accepted by the API. |
 | ScenarioSpec live Isaac physics execution | PASS | Run `6436fab1-dc15-45cb-ba96-debab712f15c` loaded digest `25d897…6650`, authored session-only support/falling-body masses, support friction, support/start offsets, and one static collision prop, applied asymmetric wheel targets from a 0.1 rad/s steering command, passed the stability gate, preserved the source stage, and produced indexed measured state. The 60-step physics-only run remained stable. |
 | ScenarioSpec RTX presets and dynamic approved props | PENDING | Historical default RTX routes remain accepted, but the new preferred-role/resolution/lighting combinations and dynamic-prop path have not yet received a dedicated live run. Do not generalize the physics-only acceptance to these combinations. |
 | Typed IROSceneSpec and compiler | PASS | Unit coverage rejects arbitrary fields/paths, out-of-room distributions, excessive object workloads, and compiled-config tampering. The compiler emits only the installed IRO `0.9.12` contract and disables caption/hosted-model outputs. |
@@ -285,7 +285,8 @@ Post-cleanup evidence collected from 2026-08-24 through 2026-08-27:
 | Warehouse rack-collapse physics | PASS | Run `warehouse-danger-collapse-physics-20260825` passed the pre-actuation gate; at 0.8 m/s for 450 steps the support moved 2.918 m and the loaded beam dropped 2.937 m, exceeding the 0.8 m collapse threshold. |
 | Warehouse RTX/camera before final geometry revision | PASS | Run `warehouse-danger-final-20260825` produced 11 frames for each of ego/tracking/witness and passed exposure, content, semantics, and tracking-geometry gates. It remained stable; the preferred Reactor seed has since been changed to the clearer witness role and the support geometry narrowed. |
 | Revised warehouse collapse plus cameras | TECHNICAL PASS, PRESENTATION FAIL | Combined run `warehouse-danger-collapse-camera-20260825` passed pre-actuation stability and the automated visual gate, captured 31 synchronized frames per role, and measured a 2.936 m beam drop. Human frame review found the witness view overlit and visually sparse with little of the native warehouse visible; it is not yet a worthwhile recording shot. |
-| Live Agents SDK selection of generic ScenarioSpec/IROSceneSpec routes | PENDING | The seventeen-tool surface has unit coverage and both executors have direct live acceptance, but a real model-driven `validate` → `build` → `run` trace on either new route has not yet been accepted. |
+| Live Agents SDK selection of generic ScenarioSpec route | PASS | GPT-5.6 Luna campaigns `ccb7258c-2965-4724-bf90-f97cafb68fc3` and `2d4a333d-3eb8-4888-b3ad-5a59cf079242` each discovered capabilities/evidence and completed model-selected `validate` → `build` → real `run`. Runs `1b44e66a-41b5-4188-a116-03244cee27f9` and `835761ff-21b9-4433-a03e-3e01601480c2` accepted goal-pose and fixed-velocity use respectively. |
+| Live Agents SDK selection of generic IROSceneSpec route | PENDING | The corrected schema is now accepted as part of the common tool surface and direct IRO execution is accepted, but a model-selected IRO `validate` → `build` → `run` campaign has not yet been run. |
 
 `mine_v2_subt` is a distinct hybrid stage, not a replacement for `mine_v1`.
 It vendors a hash-pinned MIT-licensed LTU cave conversion, reuses the existing
@@ -300,9 +301,10 @@ bounded route; it does not claim full-cave collision or general navigation.
 `agent_runtime/scenario_spec.py` is the model-facing experiment language. It
 currently exposes three allowlisted worlds, their compatible roof-support or
 rack-collapse template, Nova Carter's `fixed_velocity` differential-wheel
-controller through a registered simulator-rate adapter, bounded linear/angular
-commands, bounded robot/support offsets,
-support and falling-body masses, support friction, three camera presets, three
+adapter, and a closed-loop `goal_pose` adapter with bounded world-region target,
+speed, tolerances, timeout, and stagnation window. It also exposes bounded
+robot/support offsets, support and falling-body masses, support friction, three
+camera presets, three
 lighting presets, and up to four allowlisted collision-enabled box props inside
 world-specific placement regions. Unknown fields and incompatible combinations
 are rejected. Repeat count is fixed to one.
@@ -312,10 +314,12 @@ are rejected. Repeat count is fixed to one.
 revalidates the spec and digest, applies the ordinary campaign/per-turn budget,
 and passes the fixed file into the Isaac worker. The worker checks the selected
 world and hazard again, creates a run-owned derived stage and session layer, and
-never saves the source world. Navigation, VLA, RL, ROS, weather, arbitrary USD
-paths, arbitrary assets, arbitrary YAML, Python, shell, and Docker arguments are
-not exposed. The capability catalog reports the controller adapters as
-unavailable rather than suggesting that general Isaac support makes them usable.
+never saves the source world. General path planning/obstacle avoidance, VLA,
+RL, ROS, weather, arbitrary USD paths, arbitrary assets, arbitrary YAML,
+Python, shell, and Docker arguments are
+not exposed. The capability catalog reports `fixed_velocity` and `goal_pose` as
+executable and other controller families as unavailable rather than suggesting
+that general Isaac support makes them usable.
 
 ## Keyless IRO boundary
 
@@ -373,22 +377,33 @@ Current branch and runtime state on 2026-08-31:
   owns command generation and emits a per-step trace plus normalized termination
   evidence. Live run `eda39916-9959-40b3-98fd-24af2fa7a73d` executed 60 commands
   with the expected asymmetric 1.78/2.22 rad/s targets and measured rover motion.
+- The bounded `goal_pose` adapter is accepted. Direct run
+  `fc19f0c3-c18a-42d9-9e6a-68b9a28bb692` reached its target in 141 steps at
+  `0.0989733 m` error. Full-pose run
+  `1a5e53f0-ac78-4bf2-a5af-5a2b77144a70` also converged to an explicit terminal
+  heading in 183 steps at `0.0942914 m` position and `-0.147733 rad` heading
+  error. Model-selected run
+  `1b44e66a-41b5-4188-a116-03244cee27f9` reached a distinct target in 168 steps
+  at `0.0992608 m` error; the agent then inspected the final checkpoint.
+- Model-selected fixed baseline run `835761ff-21b9-4433-a03e-3e01601480c2`
+  executed 60 steps and terminated `control_steps_completed`. Generated traces
+  and run artifacts are indexed below ignored `runs/`.
 - Generated evidence and SQLite state remain below ignored `runs/`; source,
   tests, and this handoff are committed. Never commit runs, media, caches, `.env`,
   or keys.
 - Remaining acceptance gaps: a model-selected validate/build/run trace for the
-  generic physical and IRO routes; physical RTX preset/dynamic-prop coverage;
+  generic IRO route; physical RTX preset/dynamic-prop coverage;
   and the post-camera-fix Reactor comparison.
 
-The next planned addition is a bounded `goal_pose` registry entry. Preserve the
-separation between experiment-level agent decisions and simulator-rate control:
+The current controller-registry scope is complete: `fixed_velocity` and bounded
+`goal_pose` are accepted. Preserve the separation between experiment-level agent
+decisions and simulator-rate control:
 
-1. Extend the typed `ControllerSpec` to a discriminated union and keep registry
-   capability entries explicit about accepted and unavailable adapters.
-2. Keep `fixed_velocity` as the accepted baseline adapter. Add bounded goal pose
-   next (target, timeout, tolerances, and stuck termination),
-   then register VLA, RL-policy, and ROS adapters only when their packages,
-   model/topic contracts, observation/action rates, and live acceptance exist.
+1. Keep the typed `ControllerSpec` discriminated union and registry capability
+   entries explicit about accepted and unavailable adapters.
+2. Register VLA, RL-policy, ROS, or fuller navigation adapters only when their
+   packages, model/topic contracts, observation/action rates, and live
+   acceptance exist.
 3. The research agent selects controller ID, objective, checkpoints, and stop
    conditions. The adapter—not the LLM tool loop—owns high-rate wheel/joint/
    torque commands and safety interlocks.

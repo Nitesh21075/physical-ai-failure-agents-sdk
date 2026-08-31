@@ -27,7 +27,7 @@ Rules:
 14. Treat tool errors and unavailable capabilities honestly. Never translate an authored or intended behavior into observed evidence.
 15. Treat offline asset readiness separately from physics readiness. A native remote USD that has not been collected locally is not offline-ready.
 16. Treat an automated pixel/semantic gate separately from human presentation readiness. If the capability catalog says art-direction acceptance is pending, do not call that world recording-ready.
-17. The fixed_velocity controller owns simulator-rate wheel commands. Do not claim navigation, VLA, RL, or ROS control unless the capability catalog reports a real registered adapter.
+17. The registered fixed_velocity and goal_pose adapters own simulator-rate wheel commands. Select them only through ScenarioSpec and use returned termination evidence. Do not claim general navigation, VLA, RL, or ROS control unless the capability catalog reports a real registered adapter.
 18. Use inspect_simulation_checkpoint and compare_isaac_runs for measured evidence. A built or authored scenario is not an observed physical outcome until run_scenario succeeds.
 19. For bounded synthetic-data scene generation, use validate_iro_scene, build_iro_scene, then run_iro_scene. IRO scenes consume the same Isaac-run budget. Treat their images and annotations as synthetic scene evidence, never as a robot run, structural-failure result, or real-world ground truth.
 """

@@ -7,7 +7,7 @@ import json
 import re
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -19,6 +19,9 @@ IRO_OUTPUT_PLACEHOLDER = "__HARNESS_IRO_OUTPUT_PATH__"
 
 class StrictIROModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+Vector3 = Annotated[list[float], Field(min_length=3, max_length=3)]
 
 
 class PrimitiveShape(StrEnum):
@@ -42,12 +45,12 @@ class IROPrimitiveGroup(StrictIROModel):
     count: int = Field(default=1, ge=1, le=12)
     physics: PhysicsMode = PhysicsMode.COLLISION
     size_cm: float = Field(default=30.0, ge=5.0, le=100.0)
-    position_min_xyz_cm: tuple[float, float, float]
-    position_max_xyz_cm: tuple[float, float, float]
-    color_min_rgb: tuple[float, float, float] = (0.2, 0.2, 0.2)
-    color_max_rgb: tuple[float, float, float] = (0.9, 0.9, 0.9)
+    position_min_xyz_cm: Vector3
+    position_max_xyz_cm: Vector3
+    color_min_rgb: Vector3 = Field(default_factory=lambda: [0.2, 0.2, 0.2])
+    color_max_rgb: Vector3 = Field(default_factory=lambda: [0.9, 0.9, 0.9])
     friction: float = Field(default=0.5, ge=0.05, le=1.5)
-    initial_velocity_xyz_cmps: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    initial_velocity_xyz_cmps: Vector3 = Field(default_factory=lambda: [0.0, 0.0, 0.0])
 
     @model_validator(mode="after")
     def validate_ranges(self) -> IROPrimitiveGroup:
@@ -86,7 +89,7 @@ class IRORoomSpec(StrictIROModel):
     width_cm: float = Field(default=500.0, ge=300.0, le=800.0)
     depth_cm: float = Field(default=500.0, ge=300.0, le=800.0)
     has_walls: bool = True
-    floor_color_rgb: tuple[float, float, float] = (0.35, 0.38, 0.42)
+    floor_color_rgb: Vector3 = Field(default_factory=lambda: [0.35, 0.38, 0.42])
 
     @model_validator(mode="after")
     def validate_color(self) -> IRORoomSpec:
